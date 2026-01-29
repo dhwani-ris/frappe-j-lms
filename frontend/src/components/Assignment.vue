@@ -409,15 +409,7 @@ const getType = () => {
 	const type = assignment.data?.type
 	if (type == 'Image') {
 		return ['image/*']
-	} else if (type == 'Document') {
-		return [
-			'.doc',
-			'.docx',
-			'.xml',
-			'application/msword',
-			'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-		]
-	} else if (type == 'PDF') {
+	}else if (type == 'PDF') {
 		return ['.pdf']
 	}
 }
@@ -427,12 +419,7 @@ const validateFile = (file) => {
 	let extension = file.name.split('.').pop().toLowerCase()
 	if (type == 'Image' && !['jpg', 'jpeg', 'png'].includes(extension)) {
 		return 'Only image file is allowed.'
-	} else if (
-		type == 'Document' &&
-		!['doc', 'docx', 'xml'].includes(extension)
-	) {
-		return 'Only document file is allowed.'
-	} else if (type == 'PDF' && !['pdf'].includes(extension)) {
+	}else if (type == 'PDF' && !['pdf'].includes(extension)) {
 		return 'Only PDF file is allowed.'
 	}
 }
