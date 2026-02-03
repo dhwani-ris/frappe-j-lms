@@ -78,13 +78,13 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
+}
+
+has_permission = {
+	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
+}
 
 # DocType Class
 # ---------------
@@ -112,6 +112,9 @@ doc_events = {
 	"User": {
 		"validate": "lms.lms.user.validate_username_duplicates",
 		"after_insert": "lms.lms.user.after_insert",
+	},
+	"LMS Batch Enrollment": {
+		"validate": "lms.lms.custom.batch_enrollment_approval.set_employee_field",
 	},
 }
 
