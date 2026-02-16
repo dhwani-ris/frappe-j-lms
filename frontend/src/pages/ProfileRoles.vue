@@ -12,48 +12,101 @@
 				{{ __('You cannot change the roles in read-only mode.') }}
 			</span>
 		</div>
-		<div
-			v-else
-			class="flex flex-col md:flex-row gap-4 md:gap-0 justify-between w-3/4 mt-5"
-		>
-			<FormControl
-				:label="__('Moderator')"
-				v-model="moderator"
-				type="checkbox"
-				@change.stop="changeRole('moderator')"
-			/>
-			<FormControl
-				:label="__('Course Creator')"
-				v-model="course_creator"
-				type="checkbox"
-				@change.stop="changeRole('course_creator')"
-			/>
-			<FormControl
-				:label="__('Evaluator')"
-				v-model="batch_evaluator"
-				type="checkbox"
-				@change.stop="changeRole('batch_evaluator')"
-			/>
-			<FormControl
-				:label="__('Student')"
-				v-model="lms_student"
-				type="checkbox"
-				@change.stop="changeRole('lms_student')"
-			/>
+		<div v-else>
+			<div
+				class="flex flex-col md:flex-row gap-4 md:gap-0 justify-between w-3/4 mt-5"
+			>
+				<FormControl
+					:label="__('Moderator')"
+					v-model="roleRefs.moderator"
+					type="checkbox"
+					@change.stop="changeRole('moderator')"
+				/>
+				<FormControl
+					:label="__('Course Creator')"
+					v-model="roleRefs.course_creator"
+					type="checkbox"
+					@change.stop="changeRole('course_creator')"
+				/>
+				<FormControl
+					:label="__('Evaluator')"
+					v-model="roleRefs.batch_evaluator"
+					type="checkbox"
+					@change.stop="changeRole('batch_evaluator')"
+				/>
+				<FormControl
+					:label="__('Student')"
+					v-model="roleRefs.lms_student"
+					type="checkbox"
+					@change.stop="changeRole('lms_student')"
+				/>
+			</div>
+
+			<!-- Jamboree LMS Roles -->
+			<h3 class="mt-6 mb-3 text-md font-semibold text-ink-gray-7">
+				{{ __('Jamboree Roles') }}
+			</h3>
+			<div
+				class="flex flex-col md:flex-row gap-4 md:gap-0 justify-between w-3/4"
+			>
+				<FormControl
+					:label="__('LMS Trainer')"
+					v-model="roleRefs.lms_trainer"
+					type="checkbox"
+					@change.stop="changeRole('lms_trainer')"
+				/>
+				<FormControl
+					:label="__('LMS Master Trainer')"
+					v-model="roleRefs.lms_master_trainer"
+					type="checkbox"
+					@change.stop="changeRole('lms_master_trainer')"
+				/>
+				<FormControl
+					:label="__('LMS Manager')"
+					v-model="roleRefs.lms_manager"
+					type="checkbox"
+					@change.stop="changeRole('lms_manager')"
+				/>
+				<FormControl
+					:label="__('LMS HR')"
+					v-model="roleRefs.lms_hr"
+					type="checkbox"
+					@change.stop="changeRole('lms_hr')"
+				/>
+			</div>
 		</div>
 	</div>
 </template>
 <script setup>
 import { FormControl, createResource, toast } from 'frappe-ui'
-import { ref, watch } from 'vue'
-import { convertToTitleCase } from '@/utils'
+import { reactive, watch } from 'vue'
 import { CircleAlert } from 'lucide-vue-next'
 
-const moderator = ref(false)
-const course_creator = ref(false)
-const batch_evaluator = ref(false)
-const lms_student = ref(false)
 const readOnlyMode = window.read_only_mode
+
+// Use reactive object instead of eval() for safe dynamic access
+const roleRefs = reactive({
+	moderator: false,
+	course_creator: false,
+	batch_evaluator: false,
+	lms_student: false,
+	lms_trainer: false,
+	lms_master_trainer: false,
+	lms_manager: false,
+	lms_hr: false,
+})
+
+// Map from internal key to Frappe role name
+const roleNameMap = {
+	moderator: 'Moderator',
+	course_creator: 'Course Creator',
+	batch_evaluator: 'Batch Evaluator',
+	lms_student: 'LMS Student',
+	lms_trainer: 'LMS Trainer',
+	lms_master_trainer: 'LMS Master Trainer',
+	lms_manager: 'LMS Manager',
+	lms_hr: 'LMS HR',
+}
 
 const props = defineProps({
 	profile: {
@@ -70,14 +123,8 @@ const roles = createResource({
 		}
 	},
 	onSuccess(data) {
-		let roles = [
-			'moderator',
-			'course_creator',
-			'batch_evaluator',
-			'lms_student',
-		]
-		for (let role of roles) {
-			if (data[role]) eval(role).value = true
+		for (let roleKey of Object.keys(roleRefs)) {
+			roleRefs[roleKey] = !!data[roleKey]
 		}
 	},
 })
@@ -103,17 +150,14 @@ const updateRole = createResource({
 	},
 })
 
-const changeRole = (role) => {
+const changeRole = (roleKey) => {
 	updateRole.submit(
 		{
-			role:
-				role == 'lms_student'
-					? 'LMS Student'
-					: convertToTitleCase(role.split('_').join(' ')),
-			value: eval(role).value,
+			role: roleNameMap[roleKey],
+			value: roleRefs[roleKey],
 		},
 		{
-			onSuccess(data) {
+			onSuccess() {
 				toast.success(__('Role updated successfully'))
 			},
 		}

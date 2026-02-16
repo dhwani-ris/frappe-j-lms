@@ -53,7 +53,20 @@ def get_user_info():
 	user.is_instructor = "Course Creator" in user.roles
 	user.is_moderator = "Moderator" in user.roles
 	user.is_evaluator = "Batch Evaluator" in user.roles
-	user.is_student = not user.is_instructor and not user.is_moderator and not user.is_evaluator
+	user.is_trainer = "LMS Trainer" in user.roles
+	user.is_master_trainer = "LMS Master Trainer" in user.roles
+	user.is_lms_manager = "LMS Manager" in user.roles
+	user.is_lms_hr = "LMS HR" in user.roles
+	user.is_student = not any([
+		user.is_instructor, user.is_moderator, user.is_evaluator,
+		user.is_trainer, user.is_master_trainer, user.is_lms_manager, user.is_lms_hr,
+	])
+	user.employee = frappe.db.get_value(
+		"Employee",
+		{"user_id": frappe.session.user, "status": "Active"},
+		["name", "employee_name", "reports_to", "department", "designation"],
+		as_dict=True,
+	)
 	user.is_fc_site = is_fc_site()
 	user.is_system_manager = "System Manager" in user.roles
 	user.sitename = frappe.local.site
@@ -383,7 +396,7 @@ def get_assigned_badges(member):
 
 @frappe.whitelist()
 def get_all_users():
-	frappe.only_for(["Moderator", "Course Creator", "Batch Evaluator"])
+	frappe.only_for(["Moderator", "Course Creator", "Batch Evaluator", "LMS HR", "LMS Master Trainer"])
 	users = frappe.get_all(
 		"User",
 		{
@@ -611,12 +624,20 @@ def get_members(start=0, search=""):
 			},
 			pluck="role",
 		)
-		if "Moderator" in roles:
+		if "LMS HR" in roles:
+			member.role = "LMS HR"
+		elif "Moderator" in roles:
 			member.role = "Moderator"
+		elif "LMS Master Trainer" in roles:
+			member.role = "LMS Master Trainer"
 		elif "Course Creator" in roles:
 			member.role = "Course Creator"
+		elif "LMS Trainer" in roles:
+			member.role = "LMS Trainer"
 		elif "Batch Evaluator" in roles:
 			member.role = "Batch Evaluator"
+		elif "LMS Manager" in roles:
+			member.role = "LMS Manager"
 		elif "LMS Student" in roles:
 			member.role = "LMS Student"
 
@@ -629,7 +650,10 @@ def check_app_permission():
 		return True
 
 	roles = frappe.get_roles()
-	lms_roles = ["Moderator", "Course Creator", "Batch Evaluator", "LMS Student"]
+	lms_roles = [
+		"Moderator", "Course Creator", "Batch Evaluator", "LMS Student",
+		"LMS Trainer", "LMS Master Trainer", "LMS Manager", "LMS HR",
+	]
 	if any(role in roles for role in lms_roles):
 		return True
 
@@ -1359,7 +1383,7 @@ def get_certification_details(course):
 
 @frappe.whitelist()
 def save_role(user, role, value):
-	frappe.only_for("Moderator")
+	frappe.only_for(["Moderator", "LMS HR"])
 	if cint(value):
 		doc = frappe.get_doc(
 			{
@@ -2017,7 +2041,14 @@ def get_my_batches():
 	batches = get_my_latest_batches()
 
 	if not len(batches):
-		batches = get_upcoming_batches()
+		# Only show upcoming batches to super users; students see nothing if not enrolled
+		user_roles = frappe.get_roles(frappe.session.user)
+		is_super = any(r in user_roles for r in [
+			"System Manager", "Moderator", "LMS HR", "LMS Master Trainer",
+			"Course Creator",
+		])
+		if is_super:
+			batches = get_upcoming_batches()
 
 	for batch in batches:
 		batch_details = get_batch_details(batch)

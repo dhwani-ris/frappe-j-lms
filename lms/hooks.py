@@ -113,6 +113,12 @@ doc_events = {
 		"validate": "lms.lms.user.validate_username_duplicates",
 		"after_insert": "lms.lms.user.after_insert",
 	},
+	"LMS Quiz Submission": {
+		"after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
+	},
+	"LMS Enrollment": {
+		"on_update": "lms.lms.custom.notifications.notify_on_course_completion",
+	},
 }
 
 # Scheduled Tasks
@@ -133,6 +139,7 @@ scheduler_events = {
 		"lms.lms.doctype.lms_batch.lms_batch.send_batch_start_reminder",
 		"lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
 		"lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
+		"lms.lms.custom.notifications.check_student_progress_alerts",
 	],
 }
 

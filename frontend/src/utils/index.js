@@ -565,6 +565,48 @@ const getSidebarItems = () => {
 				},
 			],
 		},
+		{
+			label: 'Management',
+			hideLabel: false,
+			items: [
+				{
+					label: 'Trainer Dashboard',
+					icon: 'GraduationCap',
+					to: 'TrainerDashboard',
+					activeFor: ['TrainerDashboard'],
+					condition: () => {
+						return isJamboreeTrainer()
+					},
+				},
+				{
+					label: 'Manager Dashboard',
+					icon: 'BarChart3',
+					to: 'ManagerDashboard',
+					activeFor: ['ManagerDashboard'],
+					condition: () => {
+						return isJamboreeManager()
+					},
+				},
+				{
+					label: 'Assign Course',
+					icon: 'UserPlus',
+					to: 'AssignCourse',
+					activeFor: ['AssignCourse'],
+					condition: () => {
+						return isJamboreeTrainer()
+					},
+				},
+				{
+					label: 'Employees',
+					icon: 'Users',
+					to: 'EmployeeManagement',
+					activeFor: ['EmployeeManagement', 'EmployeeDetail'],
+					condition: () => {
+						return isJamboreeHR()
+					},
+				},
+			],
+		},
 	]
 }
 
@@ -573,8 +615,36 @@ const isAdmin = () => {
 	return (
 		userResource?.data?.is_instructor ||
 		userResource?.data?.is_moderator ||
-		userResource.data?.is_evaluator
+		userResource?.data?.is_evaluator ||
+		userResource?.data?.is_trainer ||
+		userResource?.data?.is_master_trainer ||
+		userResource?.data?.is_lms_hr
 	)
+}
+
+const isJamboreeTrainer = () => {
+	const { userResource } = usersStore()
+	return (
+		userResource?.data?.is_trainer ||
+		userResource?.data?.is_master_trainer ||
+		userResource?.data?.is_lms_hr ||
+		userResource?.data?.is_moderator
+	)
+}
+
+const isJamboreeManager = () => {
+	const { userResource } = usersStore()
+	return (
+		userResource?.data?.is_lms_manager ||
+		userResource?.data?.is_master_trainer ||
+		userResource?.data?.is_lms_hr ||
+		userResource?.data?.is_moderator
+	)
+}
+
+const isJamboreeHR = () => {
+	const { userResource } = usersStore()
+	return userResource?.data?.is_lms_hr
 }
 
 const checkIfCanAddProgram = () => {
