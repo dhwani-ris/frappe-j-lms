@@ -64,7 +64,7 @@ const router = useRouter()
 const user = inject('$user')
 
 onMounted(() => {
-	if (!user.data?.is_instructor && !user.data?.is_moderator)
+	if (!user.data?.is_instructor && !user.data?.is_moderator && !user.data?.is_trainer && !user.data?.is_master_trainer && !user.data?.is_lms_hr)
 		router.push({ name: 'Courses' })
 })
 

@@ -264,7 +264,7 @@ const isEvaluatorOrModerator = () => {
 
 const getTabButtons = () => {
 	let buttons = [{ label: 'About' }, { label: 'Certificates' }]
-	if ($user.data?.is_moderator) buttons.push({ label: 'Roles' })
+	if ($user.data?.is_moderator || $user.data?.is_lms_hr) buttons.push({ label: 'Roles' })
 
 	if (currentUserHasHigherAccess() && isEvaluatorOrModerator()) {
 		buttons.push({ label: 'Slots' })

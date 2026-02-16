@@ -65,7 +65,7 @@ after_sync = "lms.install.after_sync"
 before_uninstall = "lms.install.before_uninstall"
 setup_wizard_requires = "assets/lms/js/setup_wizard.js"
 after_migrate = [
-	"lms.sqlite.build_index_in_background",
+    "lms.sqlite.build_index_in_background",
 ]
 
 # Desk Notifications
@@ -79,11 +79,11 @@ after_migrate = [
 # Permissions evaluated in scripted ways
 
 permission_query_conditions = {
-	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
+    "LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
 }
 
 has_permission = {
-	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
+    "LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
 }
 
 # DocType Class
@@ -91,7 +91,7 @@ has_permission = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Web Template": "lms.overrides.web_template.CustomWebTemplate",
+    "Web Template": "lms.overrides.web_template.CustomWebTemplate",
 }
 
 # Document Events
@@ -99,44 +99,48 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
-	"*": {
-		"on_change": [
-			"lms.lms.doctype.lms_badge.lms_badge.process_badges",
-		]
-	},
-	"Discussion Reply": {
-		"after_insert": "lms.lms.utils.handle_notifications",
-		"validate": "lms.lms.utils.validate_discussion_reply",
-	},
-	"Notification Log": {"on_change": "lms.lms.utils.publish_notifications"},
-	"User": {
-		"validate": "lms.lms.user.validate_username_duplicates",
-		"after_insert": "lms.lms.user.after_insert",
-	},
-	"LMS Batch Enrollment": {
-		"validate": "lms.lms.custom.batch_enrollment_approval.set_employee_field",
-	},
+    "*": {
+        "on_change": [
+            "lms.lms.doctype.lms_badge.lms_badge.process_badges",
+        ]
+    },
+    "Discussion Reply": {
+        "after_insert": "lms.lms.utils.handle_notifications",
+        "validate": "lms.lms.utils.validate_discussion_reply",
+    },
+    "Notification Log": {"on_change": "lms.lms.utils.publish_notifications"},
+    "User": {
+        "validate": "lms.lms.user.validate_username_duplicates",
+        "after_insert": "lms.lms.user.after_insert",
+    },
+    "LMS Quiz Submission": {
+        "after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
+    },
+    "LMS Enrollment": {
+        "on_update": "lms.lms.custom.notifications.notify_on_course_completion",
+    },
 }
 
 # Scheduled Tasks
 # ---------------
 scheduler_events = {
-	"all": [
-		"lms.sqlite.build_index_in_background",
-	],
-	"hourly": [
-		"lms.lms.doctype.lms_certificate_request.lms_certificate_request.schedule_evals",
-		"lms.lms.api.update_course_statistics",
-		"lms.lms.doctype.lms_certificate_request.lms_certificate_request.mark_eval_as_completed",
-		"lms.lms.doctype.lms_live_class.lms_live_class.update_attendance",
-	],
-	"daily": [
-		"lms.job.doctype.job_opportunity.job_opportunity.update_job_openings",
-		"lms.lms.doctype.lms_payment.lms_payment.send_payment_reminder",
-		"lms.lms.doctype.lms_batch.lms_batch.send_batch_start_reminder",
-		"lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
-		"lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
-	],
+    "all": [
+        "lms.sqlite.build_index_in_background",
+    ],
+    "hourly": [
+        "lms.lms.doctype.lms_certificate_request.lms_certificate_request.schedule_evals",
+        "lms.lms.api.update_course_statistics",
+        "lms.lms.doctype.lms_certificate_request.lms_certificate_request.mark_eval_as_completed",
+        "lms.lms.doctype.lms_live_class.lms_live_class.update_attendance",
+    ],
+    "daily": [
+        "lms.job.doctype.job_opportunity.job_opportunity.update_job_openings",
+        "lms.lms.doctype.lms_payment.lms_payment.send_payment_reminder",
+        "lms.lms.doctype.lms_batch.lms_batch.send_batch_start_reminder",
+        "lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
+        "lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
+        "lms.lms.custom.notifications.check_student_progress_alerts",
+    ],
 }
 
 fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
@@ -150,7 +154,7 @@ fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
 # ------------------------------
 #
 override_whitelisted_methods = {
-	# "frappe.desk.search.get_names_for_mentions": "lms.lms.utils.get_names_for_mentions",
+    # "frappe.desk.search.get_names_for_mentions": "lms.lms.utils.get_names_for_mentions",
 }
 #
 # each overriding function accepts a `data` argument;
@@ -166,50 +170,50 @@ override_whitelisted_methods = {
 
 # Add all simple route rules here
 website_route_rules = [
-	{"from_route": "/lms/<path:app_path>", "to_route": "lms"},
-	{
-		"from_route": "/courses/<course_name>/<certificate_id>",
-		"to_route": "certificate",
-	},
+    {"from_route": "/lms/<path:app_path>", "to_route": "lms"},
+    {
+        "from_route": "/courses/<course_name>/<certificate_id>",
+        "to_route": "certificate",
+    },
 ]
 
 website_redirects = [
-	{"source": "/update-profile", "target": "/edit-profile"},
-	{"source": "/courses", "target": "/lms/courses"},
-	{
-		"source": r"^/courses/.*$",
-		"target": "/lms/courses",
-	},
-	{"source": "/batches", "target": "/lms/batches"},
-	{
-		"source": r"/batches/(.*)",
-		"target": "/lms/batches",
-		"match_with_query_string": True,
-	},
-	{"source": "/job-openings", "target": "/lms/job-openings"},
-	{
-		"source": r"/job-openings/(.*)",
-		"target": "/lms/job-openings",
-		"match_with_query_string": True,
-	},
-	{"source": "/statistics", "target": "/lms/statistics"},
+    {"source": "/update-profile", "target": "/edit-profile"},
+    {"source": "/courses", "target": "/lms/courses"},
+    {
+        "source": r"^/courses/.*$",
+        "target": "/lms/courses",
+    },
+    {"source": "/batches", "target": "/lms/batches"},
+    {
+        "source": r"/batches/(.*)",
+        "target": "/lms/batches",
+        "match_with_query_string": True,
+    },
+    {"source": "/job-openings", "target": "/lms/job-openings"},
+    {
+        "source": r"/job-openings/(.*)",
+        "target": "/lms/job-openings",
+        "match_with_query_string": True,
+    },
+    {"source": "/statistics", "target": "/lms/statistics"},
 ]
 
 update_website_context = [
-	"lms.widgets.update_website_context",
+    "lms.widgets.update_website_context",
 ]
 
 jinja = {
-	"methods": [
-		"lms.lms.utils.get_tags",
-		"lms.lms.utils.get_lesson_count",
-		"lms.lms.utils.get_instructors",
-		"lms.lms.utils.get_lesson_index",
-		"lms.lms.utils.get_lesson_url",
-		"lms.lms.utils.is_instructor",
-		"lms.lms.utils.get_palette",
-	],
-	"filters": [],
+    "methods": [
+        "lms.lms.utils.get_tags",
+        "lms.lms.utils.get_lesson_count",
+        "lms.lms.utils.get_instructors",
+        "lms.lms.utils.get_lesson_index",
+        "lms.lms.utils.get_lesson_url",
+        "lms.lms.utils.is_instructor",
+        "lms.lms.utils.get_palette",
+    ],
+    "filters": [],
 }
 ## Specify the additional tabs to be included in the user profile page.
 ## Each entry must be a subclass of lms.lms.plugins.ProfileTab
@@ -225,24 +229,24 @@ jinja = {
 # ]
 
 has_website_permission = {
-	"LMS Certificate Evaluation": "lms.lms.doctype.lms_certificate_evaluation.lms_certificate_evaluation.has_website_permission",
-	"LMS Certificate": "lms.lms.doctype.lms_certificate.lms_certificate.has_website_permission",
+    "LMS Certificate Evaluation": "lms.lms.doctype.lms_certificate_evaluation.lms_certificate_evaluation.has_website_permission",
+    "LMS Certificate": "lms.lms.doctype.lms_certificate.lms_certificate.has_website_permission",
 }
 
 ## Markdown Macros for Lessons
 lms_markdown_macro_renderers = {
-	"Exercise": "lms.plugins.exercise_renderer",
-	"Quiz": "lms.plugins.quiz_renderer",
-	"YouTubeVideo": "lms.plugins.youtube_video_renderer",
-	"Video": "lms.plugins.video_renderer",
-	"Assignment": "lms.plugins.assignment_renderer",
-	"Embed": "lms.plugins.embed_renderer",
-	"Audio": "lms.plugins.audio_renderer",
-	"PDF": "lms.plugins.pdf_renderer",
+    "Exercise": "lms.plugins.exercise_renderer",
+    "Quiz": "lms.plugins.quiz_renderer",
+    "YouTubeVideo": "lms.plugins.youtube_video_renderer",
+    "Video": "lms.plugins.video_renderer",
+    "Assignment": "lms.plugins.assignment_renderer",
+    "Embed": "lms.plugins.embed_renderer",
+    "Audio": "lms.plugins.audio_renderer",
+    "PDF": "lms.plugins.pdf_renderer",
 }
 
 page_renderer = [
-	"lms.page_renderers.SCORMRenderer",
+    "lms.page_renderers.SCORMRenderer",
 ]
 
 # set this to "/" to have profiles on the top-level
@@ -255,13 +259,13 @@ on_login = "lms.lms.user.on_login"
 get_site_info = "lms.activation.get_site_info"
 
 add_to_apps_screen = [
-	{
-		"name": "lms",
-		"logo": "/assets/lms/frontend/learning.svg",
-		"title": "Learning",
-		"route": "/lms",
-		"has_permission": "lms.lms.api.check_app_permission",
-	}
+    {
+        "name": "lms",
+        "logo": "/assets/lms/frontend/learning.svg",
+        "title": "Learning",
+        "route": "/lms",
+        "has_permission": "lms.lms.api.check_app_permission",
+    }
 ]
 
 sqlite_search = ["lms.sqlite.LearningSearch"]

@@ -265,6 +265,32 @@ const routes = [
 		component: () => import('@/pages/DataImport.vue'),
 		props: true,
 	},
+	{
+		path: '/trainer-dashboard',
+		name: 'TrainerDashboard',
+		component: () => import('@/pages/TrainerDashboard.vue'),
+	},
+	{
+		path: '/manager-dashboard',
+		name: 'ManagerDashboard',
+		component: () => import('@/pages/ManagerDashboard.vue'),
+	},
+	{
+		path: '/assign-course',
+		name: 'AssignCourse',
+		component: () => import('@/pages/AssignCourse.vue'),
+	},
+	{
+		path: '/employees',
+		name: 'EmployeeManagement',
+		component: () => import('@/pages/EmployeeManagement.vue'),
+	},
+	{
+		path: '/employees/:employeeId',
+		name: 'EmployeeDetail',
+		component: () => import('@/pages/EmployeeDetail.vue'),
+		props: true,
+	},
 ]
 
 let router = createRouter({

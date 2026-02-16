@@ -2,6 +2,7 @@ import frappe
 from frappe.desk.page.setup_wizard.setup_wizard import add_all_roles_to
 
 from lms.lms.api import give_discussions_permission
+from lms.lms.custom.jamboree_setup import setup_jamboree_roles
 
 
 def after_install():
@@ -13,6 +14,7 @@ def after_sync():
 	create_lms_roles()
 	set_default_certificate_print_format()
 	give_lms_roles_to_admin()
+	setup_jamboree_roles()
 
 
 def before_uninstall():
@@ -176,7 +178,15 @@ def create_batch_source():
 
 
 def give_lms_roles_to_admin():
-	roles = ["Course Creator", "Moderator", "Batch Evaluator"]
+	roles = [
+		"Course Creator",
+		"Moderator",
+		"Batch Evaluator",
+		"LMS Trainer",
+		"LMS Master Trainer",
+		"LMS Manager",
+		"LMS HR",
+	]
 	for role in roles:
 		if not frappe.db.exists("Has Role", {"parent": "Administrator", "role": role}):
 			doc = frappe.new_doc("Has Role")
