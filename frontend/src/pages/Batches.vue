@@ -155,7 +155,7 @@ const title = ref('')
 const certification = ref(false)
 const filters = ref({})
 const is_student = computed(() => user.data?.is_student)
-const currentTab = ref(is_student.value ? 'All' : 'Upcoming')
+const currentTab = ref('All')
 const orderBy = ref('start_date')
 const readOnlyMode = window.read_only_mode
 const router = useRouter()
@@ -240,6 +240,10 @@ const updateCertificationFilter = () => {
 	}
 }
 
+const isStaff = computed(() => {
+	return user.data?.is_moderator || user.data?.is_instructor || user.data?.is_evaluator || user.data?.is_trainer || user.data?.is_master_trainer
+})
+
 const updateTabFilter = () => {
 	orderBy.value = 'start_date'
 	if (!user.data) {
@@ -252,9 +256,10 @@ const updateTabFilter = () => {
 		orderBy.value = 'start_date desc'
 	} else if (is_student.value) {
 		delete filters.value['enrolled']
-	} else {
+	} else if (isStaff.value) {
 		delete filters.value['start_date']
 		delete filters.value['published']
+		delete filters.value['enrolled']
 		orderBy.value = 'start_date desc'
 		if (currentTab.value == 'Upcoming') {
 			filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
@@ -269,8 +274,12 @@ const updateTabFilter = () => {
 }
 
 const updateStudentFilter = () => {
-	if (!user.data || (is_student.value && currentTab.value != 'Enrolled')) {
+	if (!user.data) {
 		filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
+		filters.value['published'] = 1
+	} else if (is_student.value && currentTab.value != 'Enrolled') {
+		// For students on All tab: show all published batches (no date restriction)
+		delete filters.value['start_date']
 		filters.value['published'] = 1
 	}
 }
@@ -322,14 +331,12 @@ const batchTabs = computed(() => {
 		},
 	]
 
-	if (
-		user.data?.is_moderator ||
-		user.data?.is_instructor ||
-		user.data?.is_evaluator
-	) {
+	if (isStaff.value) {
 		tabs.push({ label: __('Upcoming') })
 		tabs.push({ label: __('Archived') })
-		tabs.push({ label: __('Unpublished') })
+		if (user.data?.is_moderator || user.data?.is_instructor || user.data?.is_master_trainer) {
+			tabs.push({ label: __('Unpublished') })
+		}
 	} else if (user.data) {
 		tabs.push({ label: __('Enrolled') })
 	}
@@ -341,7 +348,8 @@ const canCreateBatch = () => {
 	if (
 		user.data?.is_moderator ||
 		user.data?.is_instructor ||
-		user.data?.is_evaluator
+		user.data?.is_evaluator ||
+		user.data?.is_master_trainer
 	)
 		return true
 	return false

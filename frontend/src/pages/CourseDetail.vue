@@ -147,6 +147,8 @@ watch(course, () => {
 	if (
 		!isInstructor() &&
 		!user.data?.is_moderator &&
+		!user.data?.is_instructor &&
+		!user.data?.is_master_trainer &&
 		!course.data?.published &&
 		!course.data?.upcoming
 	) {

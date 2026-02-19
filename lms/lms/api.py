@@ -2087,3 +2087,14 @@ def get_upcoming_batches():
 def delete_programming_exercise(exercise):
 	frappe.db.delete("LMS Programming Exercise Submission", {"exercise": exercise})
 	frappe.db.delete("LMS Programming Exercise", exercise)
+
+
+@frappe.whitelist()
+def get_my_assignment_submission(assignment):
+	"""Get the current user's submission for an assignment. Uses session user to avoid frontend timing issues."""
+	submission = frappe.db.get_value(
+		"LMS Assignment Submission",
+		{"assignment": assignment, "member": frappe.session.user},
+		"name",
+	)
+	return {"name": submission or None}

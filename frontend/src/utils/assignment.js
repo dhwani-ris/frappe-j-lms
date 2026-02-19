@@ -2,7 +2,6 @@ import { Pencil } from 'lucide-vue-next'
 import { createApp, h } from 'vue'
 import AssessmentPlugin from '@/components/AssessmentPlugin.vue'
 import translationPlugin from '../translation'
-import { usersStore } from '@/stores/user'
 import { call } from 'frappe-ui'
 import router from '@/router'
 
@@ -43,14 +42,8 @@ export class Assignment {
 
 	renderAssignment(assignment) {
 		if (this.readOnly) {
-			const { userResource } = usersStore()
-			call('frappe.client.get_value', {
-				doctype: 'LMS Assignment Submission',
-				filters: {
-					assignment: assignment,
-					member: userResource.data?.name,
-				},
-				fieldname: ['name'],
+			call('lms.lms.api.get_my_assignment_submission', {
+				assignment: assignment,
 			}).then((data) => {
 				let submission = data.name || 'new'
 				this.wrapper.innerHTML = `<iframe src="/lms/assignment-submission/${assignment}/${submission}?fromLesson=1" class="w-full h-[500px]"></iframe>`
