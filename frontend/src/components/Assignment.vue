@@ -231,6 +231,12 @@ const props = defineProps({
 
 onMounted(() => {
 	window.addEventListener('keydown', keyboardShortcut)
+	// Clear stale cached state when starting a new submission
+	if (props.submissionName == 'new') {
+		submissionFile.value = null
+		answer.value = null
+		comments.value = null
+	}
 })
 
 const keyboardShortcut = (e) => {
@@ -329,7 +335,7 @@ const submissionResource = createDocumentResource({
 
 watch(submissionResource, () => {
 	if (submissionResource.doc) {
-		if (submissionResource.doc.assignment_attachment) {
+		if (submissionResource.doc.assignment_attachment && props.submissionName != 'new') {
 			imageResource.reload({
 				image: submissionResource.doc.assignment_attachment,
 			})

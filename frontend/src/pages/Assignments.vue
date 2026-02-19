@@ -150,7 +150,7 @@ const assignmentFilter = computed(() => {
 	if (typeFilter.value) {
 		filters.type = typeFilter.value
 	}
-	if (!user.data?.is_moderator && !user.data?.is_master_trainer) {
+	if (!user.data?.is_moderator && !user.data?.is_master_trainer && !user.data?.is_trainer) {
 		filters.owner = user.data?.email
 	}
 	return filters
