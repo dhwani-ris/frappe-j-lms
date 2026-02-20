@@ -2087,3 +2087,46 @@ def get_upcoming_batches():
 def delete_programming_exercise(exercise):
 	frappe.db.delete("LMS Programming Exercise Submission", {"exercise": exercise})
 	frappe.db.delete("LMS Programming Exercise", exercise)
+
+
+@frappe.whitelist()
+def get_trainer_students():
+	"""Get list of student members in batches where the current user is an instructor.
+	Returns all members if user is moderator/system manager/LMS HR."""
+	user_roles = frappe.get_roles(frappe.session.user)
+	is_super = any(r in user_roles for r in ["System Manager", "Moderator", "LMS HR", "LMS Master Trainer"])
+
+	if is_super:
+		return None  # No restriction — show all
+
+	# Get batches where current user is an instructor (Course Instructor is child of LMS Batch)
+	batch_names = frappe.get_all(
+		"Course Instructor",
+		{"instructor": frappe.session.user, "parenttype": "LMS Batch"},
+		pluck="parent",
+		ignore_permissions=True,
+	)
+	batch_names = list(set(batch_names))
+
+	if not batch_names:
+		return []  # Trainer has no batches — show nothing
+
+	# Get all enrolled members in those batches
+	members = frappe.get_all(
+		"LMS Batch Enrollment",
+		{"batch": ["in", batch_names]},
+		pluck="member",
+		ignore_permissions=True,
+	)
+	return list(set(members))
+
+
+@frappe.whitelist()
+def get_my_assignment_submission(assignment):
+	"""Get the current user's submission for an assignment. Uses session user to avoid frontend timing issues."""
+	submission = frappe.db.get_value(
+		"LMS Assignment Submission",
+		{"assignment": assignment, "member": frappe.session.user},
+		"name",
+	)
+	return {"name": submission or None}

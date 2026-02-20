@@ -76,6 +76,7 @@
 import {
 	Badge,
 	Breadcrumbs,
+	call,
 	createListResource,
 	FormControl,
 	ListView,
@@ -99,14 +100,20 @@ const router = useRouter()
 const assignmentID = ref('')
 const member = ref('')
 const status = ref('')
+const trainerStudents = ref(null) // null = no restriction, [] = no students, [...] = allowed members
 
-onMounted(() => {
+onMounted(async () => {
 	if (!user.data?.is_instructor && !user.data?.is_moderator && !user.data?.is_trainer && !user.data?.is_master_trainer && !user.data?.is_lms_hr) {
 		router.push({ name: 'Courses' })
 	}
 	assignmentID.value = router.currentRoute.value.query.assignmentID
 	member.value = router.currentRoute.value.query.member
 	status.value = router.currentRoute.value.query.status
+
+	// Always call backend to get trainer student restriction (backend returns null for super users)
+	const students = await call('lms.lms.api.get_trainer_students')
+	trainerStudents.value = students  // null = no restriction, [] = empty, [...] = filtered
+
 	reloadSubmissions()
 })
 
@@ -117,6 +124,13 @@ const getAssignmentFilters = () => {
 	}
 	if (member.value) {
 		filters.member = member.value
+	} else if (trainerStudents.value !== null) {
+		// Trainer: restrict to their own students only
+		if (trainerStudents.value.length === 0) {
+			filters.member = '__no_match__' // No students — return nothing
+		} else {
+			filters.member = ['in', trainerStudents.value]
+		}
 	}
 	if (status.value) {
 		filters.status = status.value

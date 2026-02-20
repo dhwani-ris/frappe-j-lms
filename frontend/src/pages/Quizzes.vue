@@ -159,14 +159,30 @@ const quizFilters = ref({})
 const showForm = ref(false)
 const title = ref('')
 
-onMounted(() => {
-	if (!user.data?.is_moderator && !user.data?.is_instructor) {
+const initQuizzes = () => {
+	const userData = user.data
+	if (!userData) return false
+	if (!userData.is_moderator && !userData.is_instructor && !userData.is_trainer && !userData.is_master_trainer) {
 		router.push({ name: 'Courses' })
-	} else if (!user.data?.is_moderator) {
-		quizFilters.value['owner'] = user.data?.name
+		return true
 	}
+	delete quizFilters.value['owner']
+	quizzes.update({ filters: { ...quizFilters.value } })
+	quizzes.reload()
+	return true
+}
+
+onMounted(() => {
 	if (route.query.new === 'true') {
 		showForm.value = true
+	}
+	if (!initQuizzes()) {
+		// user.data not ready yet, watch for it
+		const stop = watch(() => user.data, (userData) => {
+			if (!userData) return
+			initQuizzes()
+			stop()
+		})
 	}
 })
 
@@ -190,7 +206,7 @@ const quizzes = createListResource({
 		'max_attempts',
 		'modified',
 	],
-	auto: true,
+	auto: false,
 	cache: ['quizzes', user.data?.name],
 	orderBy: 'modified desc',
 	transform(data) {

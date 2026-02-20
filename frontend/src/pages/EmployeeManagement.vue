@@ -76,6 +76,7 @@
 					<thead>
 						<tr class="border-b text-left text-sm text-ink-gray-5 bg-surface-gray-1">
 							<th class="px-4 py-3">{{ __('Employee') }}</th>
+							<th class="px-4 py-3">{{ __('Status') }}</th>
 							<th class="px-4 py-3">{{ __('Department') }}</th>
 							<th class="px-4 py-3">{{ __('Designation') }}</th>
 							<th class="px-4 py-3">{{ __('Manager') }}</th>
@@ -116,6 +117,14 @@
 										</div>
 									</div>
 								</div>
+							</td>
+							<td class="px-4 py-3">
+								<Badge
+									:label="emp.status"
+									variant="subtle"
+									:theme="emp.status === 'Active' ? 'green' : emp.status === 'Inactive' ? 'orange' : 'red'"
+									size="sm"
+								/>
 							</td>
 							<td class="px-4 py-3 text-ink-gray-7">
 								{{ emp.department || '-' }}
@@ -273,6 +282,17 @@
 						</div>
 					</div>
 					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label class="block text-sm font-medium text-ink-gray-7 mb-1">
+								{{ __('Date of Joining') }}
+							</label>
+							<FormControl
+								v-model="newEmployee.date_of_joining"
+								type="date"
+							/>
+						</div>
+					</div>
+				<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium text-ink-gray-7 mb-1">
 								{{ __('Department') }}
@@ -499,6 +519,7 @@ const newEmployee = reactive({
 	employee_name: '',
 	gender: '',
 	date_of_birth: '',
+	date_of_joining: '',
 	user_email: '',
 	create_user: true,
 	department: '',
@@ -529,6 +550,7 @@ const openAddModal = () => {
 	newEmployee.employee_name = ''
 	newEmployee.gender = ''
 	newEmployee.date_of_birth = ''
+	newEmployee.date_of_joining = ''
 	newEmployee.user_email = ''
 	newEmployee.create_user = true
 	newEmployee.department = ''
@@ -551,6 +573,7 @@ const addEmployee = async () => {
 			employee_name: newEmployee.employee_name,
 			gender: newEmployee.gender?.value || '',
 			date_of_birth: newEmployee.date_of_birth || '',
+			date_of_joining: newEmployee.date_of_joining || '',
 			user_email: newEmployee.user_email || '',
 			create_user: newEmployee.create_user ? 1 : 0,
 			department: newEmployee.department?.value || '',

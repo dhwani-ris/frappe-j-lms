@@ -96,7 +96,7 @@
 						</div>
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 							<div
-								v-if="user.data?.is_moderator"
+								v-if="user.data?.is_moderator || user.data?.is_instructor || user.data?.is_master_trainer"
 								class="flex flex-col space-y-5"
 							>
 								<FormControl

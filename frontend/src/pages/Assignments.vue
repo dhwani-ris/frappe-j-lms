@@ -102,10 +102,20 @@ const router = useRouter()
 const route = useRoute()
 const readOnlyMode = window.read_only_mode
 
+watch(
+	() => user.data,
+	(userData) => {
+		if (!userData) return
+		if (!userData.is_moderator && !userData.is_instructor && !userData.is_trainer && !userData.is_master_trainer) {
+			router.push({ name: 'Courses' })
+		} else {
+			reloadAssignments()
+		}
+	},
+	{ immediate: true }
+)
+
 onMounted(() => {
-	if (!user.data?.is_moderator && !user.data?.is_instructor) {
-		router.push({ name: 'Courses' })
-	}
 	if (route.query.new === 'true') {
 		assignmentID.value = 'new'
 		showAssignmentForm.value = true
@@ -140,7 +150,7 @@ const assignmentFilter = computed(() => {
 	if (typeFilter.value) {
 		filters.type = typeFilter.value
 	}
-	if (!user.data?.is_moderator) {
+	if (!user.data?.is_moderator && !user.data?.is_master_trainer && !user.data?.is_trainer) {
 		filters.owner = user.data?.email
 	}
 	return filters

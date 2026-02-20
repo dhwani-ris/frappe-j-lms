@@ -231,6 +231,12 @@ const props = defineProps({
 
 onMounted(() => {
 	window.addEventListener('keydown', keyboardShortcut)
+	// Clear stale cached state when starting a new submission
+	if (props.submissionName == 'new') {
+		submissionFile.value = null
+		answer.value = null
+		comments.value = null
+	}
 })
 
 const keyboardShortcut = (e) => {
@@ -252,9 +258,37 @@ const assignment = createResource({
 	},
 	auto: true,
 	onSuccess(data) {
-		if (props.submissionName != 'new') {
-			submissionResource.reload()
-		}
+		// Always look up the current user's submission to avoid stale/wrong submission URLs
+		call('lms.lms.api.get_my_assignment_submission', {
+			assignment: props.assignmentID,
+		}).then((res) => {
+			const correctSubmission = res.name || 'new'
+			if (props.submissionName != 'new' && props.submissionName == correctSubmission) {
+				// URL is correct for this user — just load it
+				submissionResource.reload()
+			} else if (props.submissionName != 'new' && props.submissionName != correctSubmission) {
+				// URL has wrong submission (another user's) — redirect to correct one
+				router.replace({
+					name: 'AssignmentSubmission',
+					params: {
+						assignmentID: props.assignmentID,
+						submissionName: correctSubmission,
+					},
+					query: router.currentRoute.value.query,
+				})
+			} else if (props.submissionName == 'new' && res.name) {
+				// Submission exists but URL says new — redirect to it
+				router.replace({
+					name: 'AssignmentSubmission',
+					params: {
+						assignmentID: props.assignmentID,
+						submissionName: res.name,
+					},
+					query: router.currentRoute.value.query,
+				})
+			}
+			// else: submissionName == 'new' and no existing submission — stay as new
+		})
 	},
 })
 
@@ -297,12 +331,11 @@ const submissionResource = createDocumentResource({
 		toast.error(err.messages?.[0] || err)
 	},
 	auto: false,
-	cache: [user.data?.name, props.assignmentID],
 })
 
 watch(submissionResource, () => {
 	if (submissionResource.doc) {
-		if (submissionResource.doc.assignment_attachment) {
+		if (submissionResource.doc.assignment_attachment && props.submissionName != 'new') {
 			imageResource.reload({
 				image: submissionResource.doc.assignment_attachment,
 			})

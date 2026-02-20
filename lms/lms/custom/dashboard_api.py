@@ -177,7 +177,7 @@ def get_hr_employees(search="", department="", designation="", start=0, limit=20
 	"""HR: Get all employees with LMS data."""
 	frappe.only_for("LMS HR")
 
-	filters = {"status": "Active"}
+	filters = {}
 	or_filters = {}
 
 	if search:
@@ -194,7 +194,7 @@ def get_hr_employees(search="", department="", designation="", start=0, limit=20
 		or_filters=or_filters if or_filters else None,
 		fields=[
 			"name", "employee_name", "user_id", "department", "designation",
-			"reports_to", "image", "company",
+			"reports_to", "image", "company", "status",
 		],
 		start=cint(start),
 		page_length=cint(limit),
@@ -229,7 +229,7 @@ def get_hr_employees(search="", department="", designation="", start=0, limit=20
 		else:
 			emp.manager_name = None
 
-	total_count = frappe.db.count("Employee", {"status": "Active"})
+	total_count = frappe.db.count("Employee")
 
 	return {
 		"employees": employees,
@@ -333,7 +333,8 @@ def get_employee_detail(employee):
 		"Employee",
 		employee,
 		["name", "employee_name", "user_id", "department", "designation",
-		 "reports_to", "image", "company", "date_of_joining"],
+		 "reports_to", "image", "company", "date_of_joining",
+		 "status", "gender", "date_of_birth"],
 		as_dict=True,
 	)
 
@@ -524,6 +525,134 @@ def get_employee_options():
 		limit_page_length=0,
 	)
 	return employees
+
+
+@frappe.whitelist()
+def update_employee(employee, employee_name=None, gender=None, date_of_birth=None,
+					date_of_joining=None, department=None, designation=None,
+					reports_to=None, user_email=None):
+	"""HR: Update employee details."""
+	frappe.only_for("LMS HR")
+
+	emp = frappe.get_doc("Employee", employee)
+
+	if employee_name:
+		emp.employee_name = employee_name
+		name_parts = employee_name.strip().split(" ", 1)
+		emp.first_name = name_parts[0]
+		emp.last_name = name_parts[1] if len(name_parts) > 1 else ""
+	if gender:
+		emp.gender = gender
+	if date_of_birth:
+		emp.date_of_birth = date_of_birth
+	if date_of_joining:
+		emp.date_of_joining = date_of_joining
+	if department is not None:
+		emp.department = department or None
+	if designation is not None:
+		emp.designation = designation or None
+	if reports_to is not None:
+		emp.reports_to = reports_to or None
+	if user_email is not None:
+		if user_email and frappe.db.exists("User", user_email):
+			emp.user_id = user_email
+		elif not user_email:
+			emp.user_id = None
+
+	emp.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {"success": True, "message": f"Employee '{emp.employee_name}' updated successfully"}
+
+
+@frappe.whitelist()
+def unassign_employee_course(enrollment):
+	"""HR: Remove a course enrollment for an employee."""
+	frappe.only_for("LMS HR")
+
+	if not frappe.db.exists("LMS Enrollment", enrollment):
+		frappe.throw("Enrollment not found.")
+
+	course = frappe.db.get_value("LMS Enrollment", enrollment, "course")
+	frappe.delete_doc("LMS Enrollment", enrollment, ignore_permissions=True)
+	frappe.db.commit()
+
+	return {"success": True, "message": f"Course '{course}' enrollment removed."}
+
+
+@frappe.whitelist()
+def unassign_employee_role(employee):
+	"""HR: Remove the LMS role profile from an employee's user account."""
+	frappe.only_for("LMS HR")
+
+	emp = frappe.get_doc("Employee", employee)
+	if not emp.user_id:
+		frappe.throw("Employee has no linked User account.")
+
+	user = frappe.get_doc("User", emp.user_id)
+	old_profile = user.role_profile_name
+	user.role_profile_name = None
+	user.save(ignore_permissions=True)
+	frappe.clear_cache(user=emp.user_id)
+
+	return {
+		"success": True,
+		"message": f"Role profile '{old_profile}' removed from {emp.employee_name}",
+	}
+
+
+@frappe.whitelist()
+def deactivate_employee(employee, status="Inactive", relieving_date=None):
+	"""HR: Deactivate an employee (Inactive or Left)."""
+	frappe.only_for("LMS HR")
+
+	from frappe.utils import today
+
+	if status not in ("Inactive", "Left"):
+		frappe.throw("Invalid status. Choose 'Inactive' or 'Left'.")
+
+	emp = frappe.get_doc("Employee", employee)
+	if emp.status == status:
+		frappe.throw(f"Employee '{emp.employee_name}' is already {status}.")
+
+	emp.status = status
+	if status == "Left":
+		emp.relieving_date = relieving_date or today()
+
+	emp.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# Disable the linked user account
+	if emp.user_id and frappe.db.exists("User", emp.user_id):
+		frappe.db.set_value("User", emp.user_id, "enabled", 0)
+		frappe.clear_cache(user=emp.user_id)
+
+	return {
+		"success": True,
+		"message": f"Employee '{emp.employee_name}' has been set to {status}.",
+	}
+
+
+@frappe.whitelist()
+def reactivate_employee(employee):
+	"""HR: Reactivate an employee (set status to Active)."""
+	frappe.only_for("LMS HR")
+
+	emp = frappe.get_doc("Employee", employee)
+
+	# Re-enable the linked user FIRST before saving employee
+	if emp.user_id and frappe.db.exists("User", emp.user_id):
+		frappe.db.set_value("User", emp.user_id, "enabled", 1)
+		frappe.clear_cache(user=emp.user_id)
+
+	emp.status = "Active"
+	emp.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"message": f"Employee '{emp.employee_name}' has been reactivated.",
+	}
 
 
 def calculate_status(avg_progress):
