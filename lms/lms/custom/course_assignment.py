@@ -3,12 +3,23 @@ from frappe.utils import today, add_months
 
 
 @frappe.whitelist()
-def assign_course_to_student(student_email, course, assigned_by=None, start_date=None, end_date=None):
+def assign_course_to_student(student_email, course, assigned_by=None, trainers=None, start_date=None, end_date=None):
 	"""Assign a course to a student via the auto-batch (micro-batch) pattern."""
 	frappe.only_for(["LMS Trainer", "LMS Master Trainer", "LMS HR"])
 
 	if not assigned_by:
 		assigned_by = frappe.session.user
+
+	# Parse trainers from JSON string if needed (frappe.whitelist sends lists as JSON strings)
+	if isinstance(trainers, str):
+		import json
+		trainers = json.loads(trainers) if trainers else []
+	elif not trainers:
+		trainers = []
+
+	# If no trainers specified, use the assigning user
+	if not trainers:
+		trainers = [assigned_by]
 
 	if not frappe.db.exists("User", student_email):
 		frappe.throw(f"User {student_email} does not exist")
@@ -38,7 +49,11 @@ def assign_course_to_student(student_email, course, assigned_by=None, start_date
 	batch.timezone = frappe.db.get_single_value("System Settings", "time_zone") or "Asia/Kolkata"
 	batch.published = 1
 	batch.append("courses", {"course": course})
-	batch.append("instructors", {"instructor": assigned_by})
+
+	# Add all selected trainers as instructors
+	for trainer_email in trainers:
+		batch.append("instructors", {"instructor": trainer_email})
+
 	batch.save(ignore_permissions=True)
 
 	# Create course enrollment first (so batch enrollment validation skips auto-creation)

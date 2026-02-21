@@ -405,6 +405,16 @@ def get_all_users():
 		["name", "full_name", "user_image"],
 	)
 
+	# Add role flags for each user
+	for user in users:
+		roles = frappe.get_roles(user.name)
+		user.is_moderator = "Moderator" in roles
+		user.is_instructor = "Course Creator" in roles
+		user.is_evaluator = "Batch Evaluator" in roles
+		user.is_student = "LMS Student" in roles
+		user.is_trainer = "LMS Trainer" in roles
+		user.is_master_trainer = "LMS Master Trainer" in roles
+
 	return {user.name: user for user in users}
 
 

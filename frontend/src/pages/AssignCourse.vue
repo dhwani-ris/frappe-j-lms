@@ -46,6 +46,23 @@
 						/>
 					</div>
 
+					<div>
+						<label
+							class="block text-sm font-medium text-ink-gray-7 mb-1"
+						>
+							{{ __('Trainers') }}
+						</label>
+						<Autocomplete
+							v-model="selectedTrainers"
+							:options="trainerOptions"
+							:placeholder="__('Select one or more trainers...')"
+							:multiple="true"
+						/>
+						<div class="text-xs text-ink-gray-5 mt-1">
+							{{ __('Leave empty to assign yourself as the trainer') }}
+						</div>
+					</div>
+
 					<div class="grid grid-cols-2 gap-4">
 						<div>
 							<label
@@ -142,6 +159,7 @@ import dayjs from 'dayjs'
 
 const selectedStudent = ref('')
 const selectedCourse = ref('')
+const selectedTrainers = ref([])
 const startDate = ref(dayjs().format('YYYY-MM-DD'))
 const endDate = ref(dayjs().add(3, 'month').format('YYYY-MM-DD'))
 
@@ -168,10 +186,13 @@ const recentAssignments = createResource({
 
 const studentOptions = computed(() => {
 	if (!allUsers.data) return []
-	return Object.values(allUsers.data).map((user) => ({
-		label: user.full_name || user.name,
-		value: user.name,
-	}))
+	// Filter to only show students (users with LMS Student role)
+	return Object.values(allUsers.data)
+		.filter((user) => user.is_student)
+		.map((user) => ({
+			label: user.full_name || user.name,
+			value: user.name,
+		}))
 })
 
 const courseOptions = computed(() => {
@@ -182,6 +203,17 @@ const courseOptions = computed(() => {
 	}))
 })
 
+const trainerOptions = computed(() => {
+	if (!allUsers.data) return []
+	// Filter to only show trainers and master trainers
+	return Object.values(allUsers.data)
+		.filter((user) => user.is_trainer || user.is_master_trainer)
+		.map((user) => ({
+			label: user.full_name || user.name,
+			value: user.name,
+		}))
+})
+
 const assignResource = createResource({
 	url: 'lms.lms.custom.course_assignment.assign_course_to_student',
 })
@@ -190,15 +222,21 @@ const assignCourse = async () => {
 	if (!selectedStudent.value || !selectedCourse.value) return
 
 	try {
+		const trainers = selectedTrainers.value?.length
+			? selectedTrainers.value.map(t => t.value)
+			: []
+
 		await assignResource.submit({
 			student_email: selectedStudent.value.value,
 			course: selectedCourse.value.value,
+			trainers: trainers,
 			start_date: startDate.value,
 			end_date: endDate.value,
 		})
 		toast.success(assignResource.data?.message || __('Course assigned successfully'))
 		selectedStudent.value = ''
 		selectedCourse.value = ''
+		selectedTrainers.value = []
 		startDate.value = dayjs().format('YYYY-MM-DD')
 		endDate.value = dayjs().add(3, 'month').format('YYYY-MM-DD')
 		recentAssignments.reload()
