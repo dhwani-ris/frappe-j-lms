@@ -125,7 +125,7 @@
 						:key="assignment.name"
 						class="px-4 py-3 flex items-center justify-between"
 					>
-						<div>
+						<div class="flex-1">
 							<div class="font-medium text-ink-gray-9">
 								{{ assignment.course_title }}
 							</div>
@@ -134,13 +134,52 @@
 								{{ assignment.student_name }}
 							</div>
 						</div>
-						<div class="text-sm text-ink-gray-5">
-							{{ dayjs(assignment.creation).format('DD MMM YYYY') }}
+						<div class="flex items-center gap-3">
+							<div class="text-sm text-ink-gray-5">
+								{{ dayjs(assignment.creation).format('DD MMM YYYY') }}
+							</div>
+							<Button
+								variant="ghost"
+								:loading="unassignResource.loading"
+								@click="unassignCourse(assignment)"
+							>
+								{{ __('Unassign') }}
+							</Button>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
+
+		<Dialog
+			v-model="showUnassignDialog"
+			:options="{
+				title: __('Unassign Course'),
+				size: 'sm',
+				actions: [
+					{
+						label: __('Cancel'),
+						variant: 'ghost',
+					},
+					{
+						label: __('Unassign'),
+						variant: 'solid',
+						theme: 'red',
+						loading: unassignResource.loading,
+						onClick: confirmUnassign,
+					},
+				],
+			}"
+		>
+			<template #body-content>
+				<div v-if="assignmentToUnassign">
+					Are you sure you want to unassign
+					<strong>{{ assignmentToUnassign.course_title }}</strong>
+					from
+					<strong>{{ assignmentToUnassign.student_name }}</strong>?
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -152,6 +191,7 @@ import {
 	FormControl,
 	LoadingIndicator,
 	createResource,
+	Dialog,
 	toast,
 } from 'frappe-ui'
 import { ref, computed } from 'vue'
@@ -162,6 +202,8 @@ const selectedCourse = ref('')
 const selectedTrainers = ref([])
 const startDate = ref(dayjs().format('YYYY-MM-DD'))
 const endDate = ref(dayjs().add(3, 'month').format('YYYY-MM-DD'))
+const showUnassignDialog = ref(false)
+const assignmentToUnassign = ref(null)
 
 const allUsers = createResource({
 	url: 'lms.lms.api.get_all_users',
@@ -217,6 +259,30 @@ const trainerOptions = computed(() => {
 const assignResource = createResource({
 	url: 'lms.lms.custom.course_assignment.assign_course_to_student',
 })
+
+const unassignResource = createResource({
+	url: 'lms.lms.custom.course_assignment.unassign_course_from_student',
+})
+
+const unassignCourse = (assignment) => {
+	assignmentToUnassign.value = assignment
+	showUnassignDialog.value = true
+}
+
+const confirmUnassign = async () => {
+	try {
+		await unassignResource.submit({
+			student_email: assignmentToUnassign.value.member,
+			course: assignmentToUnassign.value.course,
+		})
+		toast.success(unassignResource.data?.message || __('Course unassigned successfully'))
+		showUnassignDialog.value = false
+		assignmentToUnassign.value = null
+		recentAssignments.reload()
+	} catch (err) {
+		toast.error(err.messages?.[0] || __('Failed to unassign course'))
+	}
+}
 
 const assignCourse = async () => {
 	if (!selectedStudent.value || !selectedCourse.value) return
