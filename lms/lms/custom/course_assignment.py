@@ -3,12 +3,23 @@ from frappe.utils import today, add_months
 
 
 @frappe.whitelist()
-def assign_course_to_student(student_email, course, assigned_by=None, start_date=None, end_date=None):
+def assign_course_to_student(student_email, course, assigned_by=None, trainers=None, start_date=None, end_date=None):
 	"""Assign a course to a student via the auto-batch (micro-batch) pattern."""
-	frappe.only_for(["LMS Trainer", "LMS Master Trainer", "LMS HR"])
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
 
 	if not assigned_by:
 		assigned_by = frappe.session.user
+
+	# Parse trainers from JSON string if needed (frappe.whitelist sends lists as JSON strings)
+	if isinstance(trainers, str):
+		import json
+		trainers = json.loads(trainers) if trainers else []
+	elif not trainers:
+		trainers = []
+
+	# If no trainers specified, use the assigning user
+	if not trainers:
+		trainers = [assigned_by]
 
 	if not frappe.db.exists("User", student_email):
 		frappe.throw(f"User {student_email} does not exist")
@@ -38,7 +49,11 @@ def assign_course_to_student(student_email, course, assigned_by=None, start_date
 	batch.timezone = frappe.db.get_single_value("System Settings", "time_zone") or "Asia/Kolkata"
 	batch.published = 1
 	batch.append("courses", {"course": course})
-	batch.append("instructors", {"instructor": assigned_by})
+
+	# Add all selected trainers as instructors
+	for trainer_email in trainers:
+		batch.append("instructors", {"instructor": trainer_email})
+
 	batch.save(ignore_permissions=True)
 
 	# Create course enrollment first (so batch enrollment validation skips auto-creation)
@@ -59,6 +74,51 @@ def assign_course_to_student(student_email, course, assigned_by=None, start_date
 		"batch": batch.name,
 		"enrollment": enrollment_name,
 		"message": f"Course '{course_title}' assigned to {student_name}",
+	}
+
+
+@frappe.whitelist()
+def unassign_course_from_student(student_email, course):
+	"""Remove course assignment from a student by deleting the auto-batch and enrollments."""
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
+
+	if not frappe.db.exists("User", student_email):
+		frappe.throw(f"User {student_email} does not exist")
+
+	if not frappe.db.exists("LMS Course", course):
+		frappe.throw(f"Course {course} does not exist")
+
+	# Find the auto-batch for this student+course combination
+	course_title = frappe.db.get_value("LMS Course", course, "title")
+	student_name = frappe.db.get_value("User", student_email, "full_name") or student_email
+	batch_title_pattern = f"{student_name} - {course_title}"
+
+	# Get the batch with this exact title
+	batch = frappe.db.get_value("LMS Batch", {"title": batch_title_pattern}, "name")
+
+	if not batch:
+		frappe.throw(f"No auto-batch found for {student_name} - {course_title}")
+
+	# Delete course enrollment
+	course_enrollment = frappe.db.get_value(
+		"LMS Enrollment", {"member": student_email, "course": course}, "name"
+	)
+	if course_enrollment:
+		frappe.delete_doc("LMS Enrollment", course_enrollment, ignore_permissions=True)
+
+	# Delete batch enrollment
+	batch_enrollment = frappe.db.get_value(
+		"LMS Batch Enrollment", {"member": student_email, "batch": batch}, "name"
+	)
+	if batch_enrollment:
+		frappe.delete_doc("LMS Batch Enrollment", batch_enrollment, ignore_permissions=True)
+
+	# Delete the auto-batch itself
+	frappe.delete_doc("LMS Batch", batch, ignore_permissions=True)
+
+	return {
+		"message": f"Course '{course_title}' unassigned from {student_name}",
+		"batch_deleted": batch,
 	}
 
 
@@ -91,7 +151,7 @@ def get_student_assignments(student_email=None):
 @frappe.whitelist()
 def get_recent_assignments(limit=10):
 	"""Get recently assigned courses (for the assign course page)."""
-	frappe.only_for(["LMS Trainer", "LMS Master Trainer", "LMS HR"])
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
 
 	enrollments = frappe.get_all(
 		"LMS Enrollment",

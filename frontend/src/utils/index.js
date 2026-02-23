@@ -593,7 +593,7 @@ const getSidebarItems = () => {
 					to: 'AssignCourse',
 					activeFor: ['AssignCourse'],
 					condition: () => {
-						return isJamboreeTrainer()
+						return canAssignCourse()
 					},
 				},
 				{
@@ -626,6 +626,15 @@ const isJamboreeTrainer = () => {
 	const { userResource } = usersStore()
 	return (
 		userResource?.data?.is_trainer ||
+		userResource?.data?.is_master_trainer ||
+		userResource?.data?.is_lms_hr ||
+		userResource?.data?.is_moderator
+	)
+}
+
+const canAssignCourse = () => {
+	const { userResource } = usersStore()
+	return (
 		userResource?.data?.is_master_trainer ||
 		userResource?.data?.is_lms_hr ||
 		userResource?.data?.is_moderator

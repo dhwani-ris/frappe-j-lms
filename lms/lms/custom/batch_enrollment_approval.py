@@ -190,6 +190,16 @@ def has_permission(doc, ptype, user):
 	if "Moderator" in frappe.get_roles(user) or "Course Creator" in frappe.get_roles(user):
 		return True
 
+	# Check if user is an instructor (Trainer/Master Trainer) of this batch
+	if "LMS Trainer" in frappe.get_roles(user) or "LMS Master Trainer" in frappe.get_roles(user):
+		# Check if user is an instructor for this batch
+		is_instructor = frappe.db.exists(
+			"Course Instructor",
+			{"parent": doc.batch, "parenttype": "LMS Batch", "instructor": user},
+		)
+		if is_instructor:
+			return True
+
 	# Owner can access their own enrollment
 	if doc.member == user:
 		return True
