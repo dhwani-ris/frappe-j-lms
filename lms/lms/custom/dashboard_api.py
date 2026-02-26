@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.utils import cint
 
 
@@ -46,6 +47,10 @@ def get_manager_dashboard():
 			report.total_courses = 0
 			report.completed = 0
 			report.avg_progress = 0
+			report.quiz_scores = []
+			report.avg_quiz_score = 0
+			report.assignment_scores = []
+			report.avg_assignment_score = 0
 			continue
 
 		enrollments = frappe.get_all(
@@ -58,12 +63,44 @@ def get_manager_dashboard():
 				"LMS Course", enrollment.course, "title"
 			)
 
+		# Get quiz scores
+		quiz_submissions = frappe.get_all(
+			"LMS Quiz Submission",
+			{"member": report.user_id},
+			["quiz", "score", "percentage", "creation"],
+			order_by="creation desc",
+		)
+		for quiz_sub in quiz_submissions:
+			quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
+			quiz_sub.quiz_title = quiz_title
+
+		# Get assignment scores
+		assignment_submissions = frappe.get_all(
+			"LMS Assignment Submission",
+			{"member": report.user_id},
+			["assignment", "status", "assignment_title", "modified"],
+			order_by="modified desc",
+		)
+
 		report.enrollments = enrollments
 		report.total_courses = len(enrollments)
 		report.completed = len([e for e in enrollments if cint(e.progress) >= 100])
 		report.avg_progress = (
 			round(sum(cint(e.progress) for e in enrollments) / len(enrollments), 1)
 			if enrollments
+			else 0
+		)
+		report.quiz_scores = quiz_submissions
+		report.avg_quiz_score = (
+			round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
+			if quiz_submissions
+			else 0
+		)
+		report.assignment_scores = assignment_submissions
+		passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
+		report.avg_assignment_score = (
+			round((passed_assignments / len(assignment_submissions)) * 100, 1)
+			if assignment_submissions
 			else 0
 		)
 
@@ -138,6 +175,28 @@ def get_trainer_dashboard():
 			for e in enrollments:
 				e.course_title = frappe.db.get_value("LMS Course", e.course, "title")
 				e.status = calculate_status(cint(e.progress))
+
+			# Get quiz scores
+			quiz_submissions = frappe.get_all(
+				"LMS Quiz Submission",
+				{"member": student.member},
+				["quiz", "score", "percentage", "creation"],
+				order_by="creation desc",
+				limit=5
+			)
+			for quiz_sub in quiz_submissions:
+				quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
+				quiz_sub.quiz_title = quiz_title
+
+			# Get assignment scores
+			assignment_submissions = frappe.get_all(
+				"LMS Assignment Submission",
+				{"member": student.member},
+				["assignment", "status", "assignment_title", "modified"],
+				order_by="modified desc",
+				limit=5
+			)
+
 			student.enrollments = enrollments
 			student.avg_progress = (
 				round(sum(cint(e.progress) for e in enrollments) / len(enrollments), 1)
@@ -147,6 +206,16 @@ def get_trainer_dashboard():
 			student.total_courses = len(enrollments)
 			student.status = calculate_status(student.avg_progress)
 			student.user_image = frappe.db.get_value("User", student.member, "user_image")
+			student.quiz_scores = quiz_submissions
+			student.avg_quiz_score = (
+				round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
+				if quiz_submissions
+				else 0
+			)
+			student.assignment_scores = assignment_submissions
+			passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
+			student.assignments_passed = passed_assignments
+			student.assignments_total = len(assignment_submissions)
 
 			if student.member not in seen_students:
 				total_progress += student.avg_progress
@@ -203,6 +272,38 @@ def get_trainer_dashboard():
 			student["total_courses"] = len(enrollments)
 			student["status"] = calculate_status(student["avg_progress"])
 			student["user_image"] = frappe.db.get_value("User", member, "user_image")
+
+			# Get quiz scores
+			quiz_submissions = frappe.get_all(
+				"LMS Quiz Submission",
+				{"member": member},
+				["quiz", "score", "percentage", "creation"],
+				order_by="creation desc",
+				limit=5
+			)
+			for quiz_sub in quiz_submissions:
+				quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
+				quiz_sub.quiz_title = quiz_title
+
+			# Get assignment scores
+			assignment_submissions = frappe.get_all(
+				"LMS Assignment Submission",
+				{"member": member},
+				["assignment", "status", "assignment_title", "modified"],
+				order_by="modified desc",
+				limit=5
+			)
+
+			student["quiz_scores"] = quiz_submissions
+			student["avg_quiz_score"] = (
+				round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
+				if quiz_submissions
+				else 0
+			)
+			student["assignment_scores"] = assignment_submissions
+			passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
+			student["assignments_passed"] = passed_assignments
+			student["assignments_total"] = len(assignment_submissions)
 
 			direct_students.append(student)
 			total_progress += student["avg_progress"]
@@ -997,3 +1098,94 @@ def bulk_upload_employees():
 		frappe.throw(f"Error processing file: {str(e)}")
 
 	return results
+
+
+
+@frappe.whitelist()
+def get_quiz_analytics(quiz_id):
+	"""Get detailed quiz analytics: attempts, scores, question performance, pass/fail"""
+	frappe.only_for(["LMS Trainer", "LMS Master Trainer", "LMS HR", "System Manager", "Moderator"])
+	
+	if not frappe.db.exists("LMS Quiz", quiz_id):
+		frappe.throw(_("Quiz not found"))
+	
+	quiz = frappe.get_doc("LMS Quiz", quiz_id)
+	
+	# Get all submissions for this quiz
+	submissions = frappe.get_all(
+		"LMS Quiz Submission",
+		{"quiz": quiz_id},
+		["name", "member", "score", "percentage", "status", "creation"],
+		order_by="creation desc"
+	)
+	
+	for sub in submissions:
+		sub.member_name = frappe.db.get_value("User", sub.member, "full_name")
+		sub.member_image = frappe.db.get_value("User", sub.member, "user_image")
+	
+	# Calculate statistics
+	total_attempts = len(submissions)
+	if total_attempts > 0:
+		avg_score = round(sum(s.get("percentage", 0) or 0 for s in submissions) / total_attempts, 1)
+		max_score = max((s.get("percentage", 0) or 0 for s in submissions), default=0)
+		min_score = min((s.get("percentage", 0) or 0 for s in submissions), default=0)
+		passed = len([s for s in submissions if (s.get("percentage", 0) or 0) >= (quiz.passing_percentage or 70)])
+		failed = total_attempts - passed
+	else:
+		avg_score = max_score = min_score = passed = failed = 0
+	
+	# Score distribution (0-20, 21-40, 41-60, 61-80, 81-100)
+	score_ranges = {
+		"0-20": 0,
+		"21-40": 0,
+		"41-60": 0,
+		"61-80": 0,
+		"81-100": 0,
+	}
+	for sub in submissions:
+		score = sub.get("percentage", 0) or 0
+		if score <= 20:
+			score_ranges["0-20"] += 1
+		elif score <= 40:
+			score_ranges["21-40"] += 1
+		elif score <= 60:
+			score_ranges["41-60"] += 1
+		elif score <= 80:
+			score_ranges["61-80"] += 1
+		else:
+			score_ranges["81-100"] += 1
+	
+	# Question-wise performance (if questions available)
+	question_performance = []
+	if hasattr(quiz, "questions") and quiz.questions:
+		for q in quiz.questions:
+			# Get correct answers count for this question across all submissions
+			correct_count = 0
+			total_answered = 0
+			
+			# This would require storing individual question responses
+			# For now, we'll just show the question
+			question_performance.append({
+				"question": q.question,
+				"type": q.type,
+				"marks": q.marks,
+				"correct_rate": 0,  # To be calculated if answer data available
+			})
+	
+	return {
+		"quiz_title": quiz.title,
+		"quiz_id": quiz_id,
+		"summary": {
+			"total_attempts": total_attempts,
+			"avg_score": avg_score,
+			"max_score": max_score,
+			"min_score": min_score,
+			"passed": passed,
+			"failed": failed,
+			"pass_rate": round((passed / total_attempts * 100), 1) if total_attempts > 0 else 0,
+		},
+		"score_distribution": score_ranges,
+		"submissions": submissions,
+		"question_performance": question_performance,
+	}
+
