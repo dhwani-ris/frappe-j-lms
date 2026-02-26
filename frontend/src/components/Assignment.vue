@@ -145,7 +145,7 @@
 					class="mt-8 p-3 bg-surface-blue-2 rounded-md"
 				>
 					<div class="text-sm text-ink-gray-5 font-medium mb-2">
-						{{ __('Comments by Evaluator') }}:
+						{{ __('Feedback by Evaluator') }}:
 					</div>
 					<div
 						class="leading-5 text-ink-gray-9"
@@ -164,10 +164,11 @@
 						:label="__('Grade')"
 						type="select"
 						:options="submissionStatusOptions"
+						@change="isDirty = true"
 					/>
 					<div>
 						<div class="text-sm text-ink-gray-5 mb-1">
-							{{ __('Comments') }}
+							{{ __('Feedback') }}
 						</div>
 						<TextEditor
 							:content="comments"
@@ -378,10 +379,17 @@ const submitAssignment = () => {
 				evaluator: evaluator,
 				comments: comments.value,
 				answer: answer.value,
+				status: submissionResource.doc.status, // Explicitly include status
 			},
 			{
 				onSuccess(data) {
 					toast.success(__('Changes saved successfully'))
+					isDirty.value = false
+					// Reload to get updated data
+					submissionResource.reload()
+				},
+				onError(error) {
+					toast.error(__('Failed to save changes: ') + (error.messages?.[0] || error))
 				},
 			}
 		)

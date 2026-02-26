@@ -10,12 +10,14 @@
 					{ label: __('Employees') },
 				]"
 			/>
-			<Button variant="solid" @click="openAddModal">
-				<template #prefix>
-					<Plus class="size-4" />
-				</template>
-				{{ __('Add Employee') }}
-			</Button>
+			<div class="flex gap-2">
+				<Button variant="solid" @click="openAddModal">
+					<template #prefix>
+						<Plus class="size-4" />
+					</template>
+					{{ __('Add Employee') }}
+				</Button>
+			</div>
 		</header>
 
 		<div class="p-5">
@@ -390,6 +392,97 @@
 				</Button>
 			</template>
 		</Dialog>
+
+		<!-- Bulk Upload Modal -->
+		<Dialog
+			v-model="showBulkUploadModal"
+			:options="{ title: __('Bulk Upload Employees'), size: 'lg' }"
+		>
+			<template #body-content>
+				<div class="space-y-4">
+					<!-- Instructions -->
+					<div class="p-4 bg-surface-blue-1 border border-blue-200 rounded-md">
+						<h4 class="font-medium text-ink-gray-9 mb-2">{{ __('Instructions') }}</h4>
+						<ol class="list-decimal list-inside space-y-1 text-sm text-ink-gray-7">
+							<li>{{ __('Download the template file') }}</li>
+							<li>{{ __('Fill in employee details') }}</li>
+							<li>{{ __('Upload the completed file') }}</li>
+						</ol>
+					</div>
+
+					<!-- Download Template -->
+					<div class="flex items-center justify-between p-4 border rounded-md">
+						<div>
+							<p class="font-medium text-ink-gray-9">{{ __('Employee Template') }}</p>
+							<p class="text-sm text-ink-gray-5">{{ __('Excel file with required fields') }}</p>
+						</div>
+						<Button variant="outline" @click="downloadTemplate">
+							<template #prefix>
+								<Download class="size-4" />
+							</template>
+							{{ __('Download') }}
+						</Button>
+					</div>
+
+					<!-- File Upload -->
+					<div>
+						<label class="block text-sm font-medium text-ink-gray-7 mb-2">
+							{{ __('Upload Employee Data') }}
+						</label>
+						<div
+							class="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-colors"
+							@click="triggerFileInput"
+							@drop.prevent="handleDrop"
+							@dragover.prevent
+						>
+							<input
+								ref="fileInput"
+								type="file"
+								accept=".xlsx,.xls,.csv"
+								class="hidden"
+								@change="handleFileSelect"
+							/>
+							<Upload class="size-10 mx-auto text-ink-gray-4 mb-2" />
+							<p class="text-ink-gray-7 font-medium">
+								{{ uploadedFile ? uploadedFile.name : __('Click to upload or drag and drop') }}
+							</p>
+							<p class="text-sm text-ink-gray-5 mt-1">
+								{{ __('Excel (.xlsx, .xls) or CSV files only') }}
+							</p>
+						</div>
+					</div>
+
+					<!-- Upload Results -->
+					<div v-if="uploadResults" class="space-y-2">
+						<div v-if="uploadResults.success > 0" class="p-3 bg-surface-green-1 border border-green-200 rounded-md">
+							<p class="text-sm text-green-800">
+								✓ {{ uploadResults.success }} {{ __('employees uploaded successfully') }}
+							</p>
+						</div>
+						<div v-if="uploadResults.failed > 0" class="p-3 bg-surface-red-1 border border-red-200 rounded-md">
+							<p class="text-sm text-red-800 font-medium mb-1">
+								✗ {{ uploadResults.failed }} {{ __('employees failed') }}
+							</p>
+							<ul class="list-disc list-inside text-xs text-red-700 space-y-1 max-h-40 overflow-y-auto">
+								<li v-for="(error, idx) in uploadResults.errors" :key="idx">
+									{{ error }}
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</template>
+			<template #actions>
+				<Button
+					variant="solid"
+					:loading="bulkUpload.loading"
+					:disabled="!uploadedFile"
+					@click="processBulkUpload"
+				>
+					{{ __('Upload Employees') }}
+				</Button>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -405,7 +498,7 @@ import {
 	createResource,
 	toast,
 } from 'frappe-ui'
-import { Search, Users as UsersIcon, Plus } from 'lucide-vue-next'
+import { Search, Users as UsersIcon, Plus, Upload, Download } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { ref, computed, reactive } from 'vue'
 
@@ -588,6 +681,104 @@ const addEmployee = async () => {
 		loadEmployees()
 	} catch (err) {
 		toast.error(err.messages?.[0] || __('Failed to create employee'))
+	}
+}
+
+// Bulk Upload
+const showBulkUploadModal = ref(false)
+const uploadedFile = ref(null)
+const fileInput = ref(null)
+const uploadResults = ref(null)
+
+const openBulkUploadModal = () => {
+	uploadedFile.value = null
+	uploadResults.value = null
+	showBulkUploadModal.value = true
+}
+
+const triggerFileInput = () => {
+	fileInput.value?.click()
+}
+
+const handleFileSelect = (event) => {
+	const file = event.target.files?.[0]
+	if (file) {
+		uploadedFile.value = file
+		uploadResults.value = null
+	}
+}
+
+const handleDrop = (event) => {
+	const file = event.dataTransfer.files?.[0]
+	if (file) {
+		uploadedFile.value = file
+		uploadResults.value = null
+	}
+}
+
+const downloadTemplate = async () => {
+	try {
+		const response = await fetch('/api/method/lms.lms.custom.dashboard_api.download_employee_template', {
+			method: 'GET',
+			headers: {
+				'X-Frappe-CSRF-Token': frappe.csrf_token || window.csrf_token,
+			},
+		})
+
+		if (response.ok) {
+			const blob = await response.blob()
+			const url = window.URL.createObjectURL(blob)
+			const a = document.createElement('a')
+			a.href = url
+			a.download = 'employee_bulk_upload_template.xlsx'
+			document.body.appendChild(a)
+			a.click()
+			window.URL.revokeObjectURL(url)
+			document.body.removeChild(a)
+		} else {
+			toast.error(__('Failed to download template'))
+		}
+	} catch (err) {
+		toast.error(__('Failed to download template'))
+	}
+}
+
+const bulkUpload = createResource({
+	url: 'lms.lms.custom.dashboard_api.bulk_upload_employees',
+})
+
+const processBulkUpload = async () => {
+	if (!uploadedFile.value) return
+
+	const formData = new FormData()
+	formData.append('file', uploadedFile.value)
+
+	try {
+		const response = await fetch('/api/method/lms.lms.custom.dashboard_api.bulk_upload_employees', {
+			method: 'POST',
+			headers: {
+				'X-Frappe-CSRF-Token': window.csrf_token || frappe?.csrf_token,
+			},
+			body: formData,
+		})
+
+		const result = await response.json()
+
+		if (result.message) {
+			uploadResults.value = result.message
+			loadEmployees()
+
+			if (result.message.failed === 0) {
+				toast.success(__('All employees uploaded successfully'))
+				setTimeout(() => {
+					showBulkUploadModal.value = false
+				}, 2000)
+			} else {
+				toast.warning(__('Some employees failed to upload. Check details below.'))
+			}
+		}
+	} catch (err) {
+		toast.error(__('Failed to upload employees'))
 	}
 }
 </script>

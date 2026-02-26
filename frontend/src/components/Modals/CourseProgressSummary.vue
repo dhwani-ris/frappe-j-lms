@@ -51,6 +51,7 @@
 									:to="{
 										name: 'Profile',
 										params: { username: row.member_username },
+										query: { from: 'course-progress', course: courseName },
 									}"
 								>
 									<ListRow :row="row">

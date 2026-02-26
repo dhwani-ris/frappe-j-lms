@@ -82,7 +82,7 @@
   {
    "fieldname": "comments",
    "fieldtype": "Text Editor",
-   "label": "Comments"
+   "label": "Feedback"
   },
   {
    "fieldname": "evaluator",

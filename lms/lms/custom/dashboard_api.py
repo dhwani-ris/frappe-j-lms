@@ -92,22 +92,25 @@ def get_trainer_dashboard():
 	if is_super:
 		# System Manager / Moderator / HR: show ALL batches
 		batch_names = frappe.get_all("LMS Batch", pluck="name")
+		instructor_courses = frappe.get_all("LMS Course", pluck="name")
 	else:
-		# Get batches where current user is an instructor
-		instructor_batches = frappe.get_all(
+		# Get batches and courses where current user is an instructor
+		instructor_records = frappe.get_all(
 			"Course Instructor",
 			{"instructor": frappe.session.user},
-			pluck="parent",
+			["parent", "parenttype"],
 		)
-		# Deduplicate (user can be instructor on multiple courses in same batch)
-		batch_names = list(set(instructor_batches))
+		batch_names = list(set([r.parent for r in instructor_records if r.parenttype == "LMS Batch"]))
+		instructor_courses = list(set([r.parent for r in instructor_records if r.parenttype == "LMS Course"]))
 
 	batches_data = []
 	total_students = 0
 	total_progress = 0
 	student_count_for_avg = 0
 	pending_evaluations = 0
+	seen_students = set()  # Track students we've already counted
 
+	# Process batches
 	for batch_name in batch_names:
 		# Check if this is actually an LMS Batch
 		if not frappe.db.exists("LMS Batch", batch_name):
@@ -145,12 +148,77 @@ def get_trainer_dashboard():
 			student.status = calculate_status(student.avg_progress)
 			student.user_image = frappe.db.get_value("User", student.member, "user_image")
 
-			total_progress += student.avg_progress
-			student_count_for_avg += 1
+			if student.member not in seen_students:
+				total_progress += student.avg_progress
+				student_count_for_avg += 1
+				seen_students.add(student.member)
 
 		total_students += len(students)
 		batch.students = students
 		batches_data.append(batch)
+
+	# Add students enrolled directly in courses (not via batches)
+	if instructor_courses:
+		# Create a virtual "Direct Course Enrollments" batch for students not in any batch
+		course_enrollments = frappe.get_all(
+			"LMS Enrollment",
+			{"course": ["in", instructor_courses]},
+			["member", "course", "progress"],
+		)
+
+		# Group by student
+		students_by_member = {}
+		for enrollment in course_enrollments:
+			if enrollment.member not in students_by_member:
+				member_name = frappe.db.get_value("User", enrollment.member, "full_name")
+				students_by_member[enrollment.member] = {
+					"member": enrollment.member,
+					"member_name": member_name or enrollment.member,
+					"enrollments": [],
+				}
+
+			# Add course details
+			course_title = frappe.db.get_value("LMS Course", enrollment.course, "title")
+			students_by_member[enrollment.member]["enrollments"].append({
+				"course": enrollment.course,
+				"course_title": course_title,
+				"progress": enrollment.progress,
+				"status": calculate_status(cint(enrollment.progress)),
+			})
+
+		# Create students list for direct enrollments
+		direct_students = []
+		for member, student_data in students_by_member.items():
+			# Skip if already in a batch
+			if member in seen_students:
+				continue
+
+			student = student_data
+			enrollments = student["enrollments"]
+			student["avg_progress"] = (
+				round(sum(cint(e["progress"]) for e in enrollments) / len(enrollments), 1)
+				if enrollments
+				else 0
+			)
+			student["total_courses"] = len(enrollments)
+			student["status"] = calculate_status(student["avg_progress"])
+			student["user_image"] = frappe.db.get_value("User", member, "user_image")
+
+			direct_students.append(student)
+			total_progress += student["avg_progress"]
+			student_count_for_avg += 1
+			seen_students.add(member)
+
+		# Add virtual batch if there are direct students
+		if direct_students:
+			total_students += len(direct_students)
+			batches_data.append({
+				"name": "direct-enrollments",
+				"title": "Direct Course Enrollments",
+				"start_date": None,
+				"end_date": None,
+				"students": direct_students,
+			})
 
 	# Count pending quiz/assignment submissions
 	pending_evaluations = frappe.db.count(
@@ -664,3 +732,268 @@ def calculate_status(avg_progress):
 	if avg_progress >= 50:
 		return "On Track"
 	return "Behind"
+
+
+@frappe.whitelist()
+def download_employee_template():
+	"""Download Excel template for bulk employee upload."""
+	import openpyxl
+	from openpyxl import Workbook
+	from io import BytesIO
+
+	# Create workbook
+	wb = Workbook()
+	ws = wb.active
+	ws.title = "Employee Template"
+
+	# Headers
+	headers = [
+		"Employee Name*",
+		"Gender*",
+		"Date of Birth* (YYYY-MM-DD)",
+		"Date of Joining (YYYY-MM-DD)",
+		"Email",
+		"Department",
+		"Designation",
+		"Manager Employee ID",
+		"Role Profile",
+	]
+
+	# Sample data
+	data = [
+		[
+			"John Doe",
+			"Male",
+			"1990-01-15",
+			"2023-01-01",
+			"john.doe@example.com",
+			"Sales",
+			"Sales Manager",
+			"",
+			"LMS Student",
+		],
+		[
+			"Jane Smith",
+			"Female",
+			"1992-05-20",
+			"2023-02-01",
+			"jane.smith@example.com",
+			"Marketing",
+			"Marketing Executive",
+			"",
+			"LMS Student",
+		],
+	]
+
+	# Write headers
+	ws.append(headers)
+
+	# Write sample data
+	for row in data:
+		ws.append(row)
+
+	# Style headers
+	from openpyxl.styles import Font, PatternFill
+	for cell in ws[1]:
+		cell.font = Font(bold=True)
+		cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+
+	# Save to BytesIO
+	file_stream = BytesIO()
+	wb.save(file_stream)
+	file_stream.seek(0)
+
+	frappe.response["filename"] = "employee_bulk_upload_template.xlsx"
+	frappe.response["filecontent"] = file_stream.read()
+	frappe.response["type"] = "binary"
+
+
+@frappe.whitelist()
+def bulk_upload_employees():
+	"""Bulk upload employees from Excel/CSV file."""
+	import openpyxl
+	import csv
+	from datetime import datetime
+
+	frappe.only_for(["LMS HR", "System Manager", "LMS Manager"])
+
+	if not frappe.request.files:
+		frappe.throw("No file uploaded")
+
+	file = frappe.request.files.get("file")
+	if not file:
+		frappe.throw("No file found in request")
+
+	filename = file.filename.lower()
+	results = {"success": 0, "failed": 0, "errors": []}
+
+	try:
+		if filename.endswith((".xlsx", ".xls")):
+			# Handle Excel file
+			workbook = openpyxl.load_workbook(file)
+			sheet = workbook.active
+			rows = list(sheet.iter_rows(values_only=True))
+			headers = rows[0] if rows else []
+			data_rows = rows[1:] if len(rows) > 1 else []
+
+		elif filename.endswith(".csv"):
+			# Handle CSV file
+			file.stream.seek(0)
+			content = file.stream.read().decode("utf-8")
+			csv_reader = csv.reader(io.StringIO(content))
+			rows = list(csv_reader)
+			headers = rows[0] if rows else []
+			data_rows = rows[1:] if len(rows) > 1 else []
+		else:
+			frappe.throw("Invalid file type. Please upload Excel (.xlsx, .xls) or CSV file")
+
+		# Process each row
+		for idx, row in enumerate(data_rows, start=2):
+			if not row or not any(row):  # Skip empty rows
+				continue
+
+			try:
+				# Map columns (adjust based on template)
+				employee_name = str(row[0]).strip() if len(row) > 0 and row[0] and str(row[0]).strip() != "None" else ""
+				gender = str(row[1]).strip() if len(row) > 1 and row[1] and str(row[1]).strip() != "None" else ""
+				dob = str(row[2]).strip() if len(row) > 2 and row[2] and str(row[2]).strip() != "None" else ""
+				doj = str(row[3]).strip() if len(row) > 3 and row[3] and str(row[3]).strip() != "None" else ""
+				email = str(row[4]).strip() if len(row) > 4 and row[4] and str(row[4]).strip() != "None" else ""
+				department = str(row[5]).strip() if len(row) > 5 and row[5] and str(row[5]).strip() != "None" else ""
+				designation = str(row[6]).strip() if len(row) > 6 and row[6] and str(row[6]).strip() != "None" else ""
+				reports_to = str(row[7]).strip() if len(row) > 7 and row[7] and str(row[7]).strip() != "None" else ""
+				role_profile = str(row[8]).strip() if len(row) > 8 and row[8] and str(row[8]).strip() != "None" else ""
+
+				# Validate required fields
+				if not employee_name or employee_name == "None":
+					results["errors"].append(f"Row {idx}: Employee name is required")
+					results["failed"] += 1
+					continue
+
+				if not gender or gender not in ["Male", "Female", "Other"]:
+					results["errors"].append(f"Row {idx}: Valid gender is required (Male/Female/Other)")
+					results["failed"] += 1
+					continue
+
+				if not dob:
+					results["errors"].append(f"Row {idx}: Date of birth is required")
+					results["failed"] += 1
+					continue
+
+				# Parse dates
+				try:
+					if isinstance(dob, datetime):
+						dob = dob.strftime("%Y-%m-%d")
+					elif "-" in str(dob):
+						dob = str(dob).split()[0]  # Remove time if present
+
+					if doj and isinstance(doj, datetime):
+						doj = doj.strftime("%Y-%m-%d")
+					elif doj and "-" in str(doj):
+						doj = str(doj).split()[0]
+				except:
+					results["errors"].append(f"Row {idx}: Invalid date format")
+					results["failed"] += 1
+					continue
+
+				# Check if employee with same email already exists
+				existing_employee = None
+				if email:
+					existing_employee = frappe.db.get_value("Employee", {"user_id": email}, "name")
+
+				if existing_employee:
+					results["errors"].append(f"Row {idx}: Employee with email {email} already exists ({existing_employee})")
+					results["failed"] += 1
+					continue
+
+				# Create employee
+				doc = frappe.get_doc({
+					"doctype": "Employee",
+					"employee_name": employee_name,
+					"gender": gender,
+					"date_of_birth": dob,
+					"date_of_joining": doj or None,
+					"company": frappe.defaults.get_user_default("Company") or frappe.db.get_single_value("Global Defaults", "default_company"),
+					"status": "Active",
+					"department": department or None,
+					"designation": designation or None,
+					"reports_to": reports_to or None,
+				})
+
+				# First, try to create/link user if email provided
+				if email:
+					existing_user = frappe.db.exists("User", email)
+					if existing_user:
+						doc.user_id = email
+					else:
+						# Create user BEFORE creating employee
+						try:
+							# Split name properly
+							name_parts = [part for part in employee_name.split() if part]
+							first_name = name_parts[0] if name_parts else "User"
+							last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+							# Validate first_name is not empty
+							if not first_name or first_name.strip() == "":
+								first_name = "User"
+
+							# Debug logging
+							frappe.log_error(
+								f"Creating user: email={email}, first_name='{first_name}', last_name='{last_name}', employee_name='{employee_name}'",
+								"Bulk Upload Debug"
+							)
+
+							user = frappe.get_doc({
+								"doctype": "User",
+								"email": email,
+								"first_name": first_name[:140],  # Frappe field limit
+								"last_name": last_name[:140] if last_name else "",
+								"send_welcome_email": 0,
+								"enabled": 1,
+							})
+							user.insert(ignore_permissions=True)
+							doc.user_id = email
+						except Exception as e:
+							# If user creation fails, don't create employee
+							import traceback
+							error_msg = str(e)
+							full_error = traceback.format_exc()
+							frappe.log_error(f"Bulk Upload User Creation Error Row {idx}", full_error)
+							results["errors"].append(f"Row {idx}: User creation failed for '{employee_name}' (email: {email}) - {error_msg}")
+							results["failed"] += 1
+							frappe.db.rollback()  # Rollback user creation attempt
+							continue  # Skip employee creation
+
+				# Now create employee (only if user creation succeeded or no email provided)
+				doc.insert(ignore_permissions=True)
+
+				# Assign role profile if provided
+				if role_profile and doc.user_id:
+					try:
+						role_doc = frappe.get_doc("Role Profile", role_profile)
+						for role in role_doc.roles:
+							if not frappe.db.exists("Has Role", {"parent": doc.user_id, "role": role.role}):
+								frappe.get_doc({
+									"doctype": "Has Role",
+									"parent": doc.user_id,
+									"parenttype": "User",
+									"parentfield": "roles",
+									"role": role.role,
+								}).insert(ignore_permissions=True)
+					except:
+						pass
+
+				# Commit all changes for this row
+				frappe.db.commit()
+				results["success"] += 1
+
+			except Exception as e:
+				results["errors"].append(f"Row {idx}: {str(e)}")
+				results["failed"] += 1
+				frappe.db.rollback()  # Rollback this row's changes
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.throw(f"Error processing file: {str(e)}")
+
+	return results

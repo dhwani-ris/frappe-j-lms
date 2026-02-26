@@ -112,6 +112,8 @@
 				</template>
 				{{ __('Enroll Now') }}
 			</Button>
+			<!-- Edit option disabled as per requirement -->
+			<!--
 			<router-link
 				v-if="canEditBatch"
 				:to="{
@@ -130,6 +132,7 @@
 					</span>
 				</Button>
 			</router-link>
+			-->
 		</div>
 	</div>
 </template>
