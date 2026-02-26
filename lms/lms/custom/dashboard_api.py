@@ -1115,7 +1115,7 @@ def get_quiz_analytics(quiz_id):
 	submissions = frappe.get_all(
 		"LMS Quiz Submission",
 		{"quiz": quiz_id},
-		["name", "member", "score", "percentage", "status", "creation"],
+		["name", "member", "score", "percentage", "creation"],
 		order_by="creation desc"
 	)
 	

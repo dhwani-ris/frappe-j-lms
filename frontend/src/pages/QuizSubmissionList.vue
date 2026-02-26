@@ -127,7 +127,7 @@
 								<td class="px-4 py-3 text-ink-gray-7">{{ sub.percentage }}%</td>
 								<td class="px-4 py-3">
 									<Badge
-										:label="sub.status || 'Completed'"
+										:label="(sub.percentage >= 70) ? 'Passed' : 'Failed'"
 										:theme="(sub.percentage >= 70) ? 'green' : 'red'"
 									/>
 								</td>
