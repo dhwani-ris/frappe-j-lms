@@ -96,6 +96,8 @@
 							<th class="px-4 py-3">{{ __('Courses') }}</th>
 							<th class="px-4 py-3">{{ __('Completed') }}</th>
 							<th class="px-4 py-3">{{ __('Avg Progress') }}</th>
+							<th class="px-4 py-3">{{ __('Avg Quiz Score') }}</th>
+							<th class="px-4 py-3">{{ __('Assignments') }}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -155,10 +157,16 @@
 										</span>
 									</div>
 								</td>
+								<td class="px-4 py-3 text-ink-gray-7">
+									{{ report.avg_quiz_score || 0 }}%
+								</td>
+								<td class="px-4 py-3 text-ink-gray-7">
+									{{ report.avg_assignment_score || 0 }}%
+								</td>
 							</tr>
 							<!-- Expanded: Course Details -->
 							<tr v-if="expandedReport === report.name && report.enrollments?.length">
-								<td colspan="6" class="p-0">
+								<td colspan="8" class="p-0">
 									<div class="bg-surface-gray-1">
 										<div
 											v-for="enrollment in report.enrollments"

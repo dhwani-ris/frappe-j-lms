@@ -4,7 +4,20 @@
 		<header
 			class="sticky group top-0 z-10 flex flex-col md:flex-row md:items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 		>
-			<Breadcrumbs class="h-7" :items="breadcrumbs" />
+			<div class="flex items-center gap-3">
+				<Button
+					v-if="$route.query.from === 'course-progress' && $route.query.course"
+					variant="subtle"
+					size="sm"
+					@click="goBackToCourseProgress"
+				>
+					<template #prefix>
+						<ArrowLeft class="size-4" />
+					</template>
+					{{ __('Back to Course') }}
+				</Button>
+				<Breadcrumbs class="h-7" :items="breadcrumbs" />
+			</div>
 			<Button v-if="isSessionUser()" class="invisible group-hover:visible">
 				<template #icon>
 					<RefreshCcw
@@ -154,6 +167,7 @@ import {
 import { computed, inject, watch, ref, onMounted, watchEffect } from 'vue'
 import { sessionStore } from '@/stores/session'
 import {
+	ArrowLeft,
 	BadgeCheckIcon,
 	Edit,
 	Github,
@@ -249,6 +263,16 @@ const editProfile = () => {
 
 const isSessionUser = () => {
 	return $user.data?.email === profile.data?.name
+}
+
+const goBackToCourseProgress = () => {
+	const courseName = route.query.course
+	if (courseName) {
+		router.push({
+			name: 'CourseDetail',
+			params: { courseName },
+		})
+	}
 }
 
 const currentUserHasHigherAccess = () => {
