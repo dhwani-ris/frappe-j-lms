@@ -24,6 +24,34 @@
 		</header>
 
 		<div class="p-5">
+			<!-- Search and Filters -->
+			<div v-if="dashboard.data?.reports?.length" class="mb-6 flex flex-wrap gap-3">
+				<div class="flex-1 min-w-[250px]">
+					<Input
+						v-model="searchQuery"
+						type="text"
+						:placeholder="__('Search employees...')"
+					>
+						<template #prefix>
+							<Search class="size-4 text-ink-gray-4" />
+						</template>
+					</Input>
+				</div>
+				<FormControl
+					type="select"
+					v-model="departmentFilter"
+					:options="departmentOptions"
+					:placeholder="__('All Departments')"
+					class="w-48"
+				/>
+				<FormControl
+					type="select"
+					v-model="progressFilter"
+					:options="progressOptions"
+					:placeholder="__('All Progress Levels')"
+					class="w-48"
+				/>
+			</div>
 			<!-- Summary Cards -->
 			<div
 				v-if="dashboard.data"
@@ -83,9 +111,12 @@
 			<!-- Team Progress Table -->
 			<div v-else class="border rounded-lg overflow-hidden">
 				<div
-					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9"
+					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9 flex items-center justify-between"
 				>
-					{{ __('Team Learning Progress') }}
+					<span>{{ __('Team Learning Progress') }}</span>
+					<span class="text-sm font-normal text-ink-gray-5">
+						{{ __('Showing {0} of {1}', [paginatedReports.length, filteredReports.length]) }}
+					</span>
 				</div>
 				<table class="w-full">
 					<thead>
@@ -93,16 +124,19 @@
 							<th class="px-4 py-3 w-8"></th>
 							<th class="px-4 py-3">{{ __('Employee') }}</th>
 							<th class="px-4 py-3">{{ __('Department') }}</th>
-							<th class="px-4 py-3">{{ __('Courses') }}</th>
-							<th class="px-4 py-3">{{ __('Completed') }}</th>
+							<th class="px-4 py-3 text-center">{{ __('Courses') }}</th>
+							<th class="px-4 py-3 text-center">{{ __('Completed') }}</th>
 							<th class="px-4 py-3">{{ __('Avg Progress') }}</th>
-							<th class="px-4 py-3">{{ __('Avg Quiz Score') }}</th>
-							<th class="px-4 py-3">{{ __('Assignments') }}</th>
+							<th class="px-4 py-3 text-center cursor-pointer hover:text-ink-gray-9" @click="openQuizAnalytics">
+								{{ __('Quiz Score') }}
+								<BarChart3 class="inline size-3 ml-1" />
+							</th>
+							<th class="px-4 py-3 text-center">{{ __('Assignments') }}</th>
 						</tr>
 					</thead>
 					<tbody>
 						<template
-							v-for="report in dashboard.data.reports"
+							v-for="report in paginatedReports"
 							:key="report.name"
 						>
 							<tr
@@ -138,10 +172,10 @@
 								<td class="px-4 py-3 text-ink-gray-7">
 									{{ report.department || '-' }}
 								</td>
-								<td class="px-4 py-3 text-ink-gray-7">
+								<td class="px-4 py-3 text-ink-gray-7 text-center">
 									{{ report.total_courses }}
 								</td>
-								<td class="px-4 py-3 text-ink-gray-7">
+								<td class="px-4 py-3 text-ink-gray-7 text-center">
 									{{ report.completed }}
 								</td>
 								<td class="px-4 py-3">
@@ -157,10 +191,14 @@
 										</span>
 									</div>
 								</td>
-								<td class="px-4 py-3 text-ink-gray-7">
-									{{ report.avg_quiz_score || 0 }}%
+								<td
+									class="px-4 py-3 text-center cursor-pointer hover:text-blue-600 hover:underline"
+									@click.stop="openQuizAnalytics(report)"
+								>
+									<span class="font-semibold">{{ report.avg_quiz_score || 0 }}%</span>
+									<span class="text-xs text-ink-gray-5 block">{{ report.quiz_scores?.length || 0 }} quizzes</span>
 								</td>
-								<td class="px-4 py-3 text-ink-gray-7">
+								<td class="px-4 py-3 text-ink-gray-7 text-center">
 									{{ report.avg_assignment_score || 0 }}%
 								</td>
 							</tr>
@@ -209,8 +247,48 @@
 						</template>
 					</tbody>
 				</table>
+				<!-- Pagination -->
+				<div v-if="filteredReports.length > perPage" class="px-4 py-3 border-t bg-surface-gray-1 flex items-center justify-between">
+					<div class="flex items-center space-x-2">
+						<span class="text-sm text-ink-gray-5">{{ __('Show') }}</span>
+						<FormControl
+							type="select"
+							v-model="perPage"
+							:options="perPageOptions"
+							class="w-20"
+						/>
+						<span class="text-sm text-ink-gray-5">{{ __('per page') }}</span>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Button
+							variant="ghost"
+							size="sm"
+							:disabled="currentPage === 1"
+							@click="currentPage--"
+						>
+							{{ __('Previous') }}
+						</Button>
+						<span class="text-sm text-ink-gray-7 px-3">
+							{{ __('Page {0} of {1}', [currentPage, totalPages]) }}
+						</span>
+						<Button
+							variant="ghost"
+							size="sm"
+							:disabled="currentPage === totalPages"
+							@click="currentPage++"
+						>
+							{{ __('Next') }}
+						</Button>
+					</div>
+				</div>
 			</div>
 		</div>
+
+		<!-- Quiz Analytics Modal -->
+		<QuizAnalyticsModal
+			v-model="showQuizModal"
+			:employee="selectedEmployee"
+		/>
 	</div>
 </template>
 
@@ -222,17 +300,53 @@ import {
 	createResource,
 	LoadingIndicator,
 	call,
+	Input,
+	FormControl,
 } from 'frappe-ui'
-import { BarChart3, Download, ChevronRight } from 'lucide-vue-next'
+import { BarChart3, Download, ChevronRight, Search } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
-import { ref } from 'vue'
+import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
+import { ref, computed, watch } from 'vue'
 
 const exporting = ref(false)
 const expandedReport = ref(null)
+const searchQuery = ref('')
+const departmentFilter = ref('')
+const progressFilter = ref('')
+const currentPage = ref(1)
+const perPage = ref(25)
+const showQuizModal = ref(false)
+const selectedEmployee = ref(null)
+
+const perPageOptions = [
+	{ label: '10', value: 10 },
+	{ label: '25', value: 25 },
+	{ label: '50', value: 50 },
+	{ label: '100', value: 100 },
+]
+
+const progressOptions = [
+	{ label: __('All Progress Levels'), value: '' },
+	{ label: __('0-25%'), value: '0-25' },
+	{ label: __('25-50%'), value: '25-50' },
+	{ label: __('50-75%'), value: '50-75' },
+	{ label: __('75-100%'), value: '75-100' },
+]
 
 const toggleReport = (name) => {
 	expandedReport.value = expandedReport.value === name ? null : name
 }
+
+const openQuizAnalytics = (report) => {
+	if (!report) return
+	selectedEmployee.value = report
+	showQuizModal.value = true
+}
+
+// Reset to page 1 when filters change
+watch([searchQuery, departmentFilter, progressFilter], () => {
+	currentPage.value = 1
+})
 
 const getEnrollmentStatus = (progress) => {
 	const p = progress || 0
@@ -255,6 +369,68 @@ const getStatusTheme = (status) => {
 const dashboard = createResource({
 	url: 'lms.lms.custom.dashboard_api.get_manager_dashboard',
 	auto: true,
+	onSuccess(data) {
+		console.log('Manager Dashboard Data:', {
+			total_reports: data?.reports?.length || 0,
+			team_size: data?.summary?.team_size || 0,
+			reports: data?.reports
+		})
+	}
+})
+
+// Computed: Department options from data
+const departmentOptions = computed(() => {
+	if (!dashboard.data?.reports) return []
+	const depts = [...new Set(dashboard.data.reports.map(r => r.department).filter(Boolean))]
+	return [
+		{ label: __('All Departments'), value: '' },
+		...depts.map(d => ({ label: d, value: d }))
+	]
+})
+
+// Computed: Filtered reports
+const filteredReports = computed(() => {
+	if (!dashboard.data?.reports) return []
+
+	let filtered = dashboard.data.reports
+
+	// Search filter
+	if (searchQuery.value) {
+		const query = searchQuery.value.toLowerCase()
+		filtered = filtered.filter(r =>
+			r.employee_name?.toLowerCase().includes(query) ||
+			r.department?.toLowerCase().includes(query) ||
+			r.designation?.toLowerCase().includes(query)
+		)
+	}
+
+	// Department filter
+	if (departmentFilter.value) {
+		filtered = filtered.filter(r => r.department === departmentFilter.value)
+	}
+
+	// Progress filter
+	if (progressFilter.value) {
+		const [min, max] = progressFilter.value.split('-').map(Number)
+		filtered = filtered.filter(r => {
+			const progress = r.avg_progress || 0
+			return progress >= min && progress <= max
+		})
+	}
+
+	return filtered
+})
+
+// Computed: Paginated reports
+const paginatedReports = computed(() => {
+	const start = (currentPage.value - 1) * perPage.value
+	const end = start + perPage.value
+	return filteredReports.value.slice(start, end)
+})
+
+// Computed: Total pages
+const totalPages = computed(() => {
+	return Math.ceil(filteredReports.value.length / perPage.value) || 1
 })
 
 const exportCSV = async () => {

@@ -63,7 +63,7 @@
 			<ProgressBar :progress="timerProgress" />
 		</div>
 
-		<div v-if="activeQuestion == 0">
+		<div v-if="activeQuestion == 0 && !loadedSubmission">
 			<div class="border text-center p-20 rounded-md">
 				<div class="font-semibold text-lg text-ink-gray-9">
 					{{ quiz.data.title }}
@@ -100,7 +100,7 @@
 				</div>
 			</div>
 		</div>
-		<div v-else-if="!quizSubmission.data">
+		<div v-else-if="!quizSubmission.data && !loadedSubmission">
 			<div v-for="(question, qtidx) in questions">
 				<div
 					v-if="qtidx == activeQuestion - 1 && questionDetails.data"
@@ -246,12 +246,12 @@
 				</div>
 			</div>
 		</div>
-		<div v-else class="border rounded-md p-20 text-center space-y-2">
+		<div v-else-if="loadedSubmission || quizSubmission.data" class="border rounded-md p-20 text-center space-y-2">
 			<div class="text-lg font-semibold text-ink-gray-9">
 				{{ __('Quiz Summary') }}
 			</div>
 			<div
-				v-if="quizSubmission.data.is_open_ended"
+				v-if="(loadedSubmission || quizSubmission.data).is_open_ended"
 				class="leading-5 text-ink-gray-7"
 			>
 				{{
@@ -265,9 +265,9 @@
 					__(
 						'You got {0}% correct answers with a score of {1} out of {2}'
 					).format(
-						Math.ceil(quizSubmission.data.percentage),
-						quizSubmission.data.score,
-						quizSubmission.data.score_out_of
+						Math.ceil((loadedSubmission || quizSubmission.data).percentage),
+						(loadedSubmission || quizSubmission.data).score,
+						(loadedSubmission || quizSubmission.data).score_out_of
 					)
 				}}
 			</div>
@@ -337,6 +337,7 @@ let questions = reactive([])
 const possibleAnswer = ref(null)
 const timer = ref(0)
 let timerInterval = null
+const loadedSubmission = ref(null)
 
 const props = defineProps({
 	quizName: {
@@ -459,10 +460,42 @@ watch(
 		}
 		if (quiz.data && quiz.data.max_attempts) {
 			attempts.reload()
-			resetQuiz()
 		}
+		// Load existing submission if available
+		loadExistingSubmission()
 	}
 )
+
+const loadExistingSubmission = async () => {
+	if (!quiz.data || !user.data) return
+
+	// Check if there's a recent submission
+	try {
+		const existingSubmissions = await call('frappe.client.get_list', {
+			doctype: 'LMS Quiz Submission',
+			filters: {
+				member: user.data.name,
+				quiz: quiz.data.name,
+			},
+			fields: ['name'],
+			order_by: 'creation desc',
+			limit: 1,
+		})
+
+		if (existingSubmissions && existingSubmissions.length > 0) {
+			// Fetch the full document to get complete submission data
+			const fullSubmission = await call('frappe.client.get', {
+				doctype: 'LMS Quiz Submission',
+				name: existingSubmissions[0].name,
+			})
+
+			// Store in loadedSubmission ref for display
+			loadedSubmission.value = fullSubmission
+		}
+	} catch (error) {
+		console.error('Error loading existing quiz submission:', error)
+	}
+}
 
 const quizSubmission = createResource({
 	url: 'lms.lms.doctype.lms_quiz.lms_quiz.quiz_summary',
@@ -645,6 +678,7 @@ const resetQuiz = () => {
 	selectedOptions.splice(0, selectedOptions.length, ...[0, 0, 0, 0])
 	showAnswers.length = 0
 	quizSubmission.reset()
+	loadedSubmission.value = null
 	populateQuestions()
 	setupTimer()
 }

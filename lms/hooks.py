@@ -112,6 +112,7 @@ doc_events = {
     "User": {
         "validate": "lms.lms.user.validate_username_duplicates",
         "after_insert": "lms.lms.user.after_insert",
+        "on_update": "lms.lms.user.on_update",
     },
     "LMS Quiz Submission": {
         "after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",

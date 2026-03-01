@@ -265,12 +265,12 @@ const tabs = computed(() => {
 		icon: LayoutDashboard,
 	})
 
-	if (isAdmin.value) {
-		batchTabs.push({
-			label: 'Students',
-			icon: ClipboardPen,
-		})
-	}
+	// if (isAdmin.value) {
+	// 	batchTabs.push({
+	// 		label: 'Students',
+	// 		icon: ClipboardPen,
+	// 	})
+	// }
 
 	batchTabs.push({
 		label: 'Courses',

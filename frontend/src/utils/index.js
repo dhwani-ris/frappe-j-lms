@@ -469,16 +469,16 @@ const getSidebarItems = () => {
 						'LessonForm',
 					],
 				},
-				{
-					label: 'Programs',
-					icon: 'Route',
-					to: 'Programs',
-					activeFor: ['Programs', 'ProgramDetail'],
-					await: true,
-					condition: () => {
-						return checkIfCanAddProgram()
-					},
-				},
+				// {
+				// 	label: 'Programs',
+				// 	icon: 'Route',
+				// 	to: 'Programs',
+				// 	activeFor: ['Programs', 'ProgramDetail'],
+				// 	await: true,
+				// 	condition: () => {
+				// 		return checkIfCanAddProgram()
+				// 	},
+				// },
 				{
 					label: 'Batches',
 					icon: 'Users',

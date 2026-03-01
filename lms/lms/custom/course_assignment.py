@@ -99,22 +99,31 @@ def unassign_course_from_student(student_email, course):
 	if not batch:
 		frappe.throw(f"No auto-batch found for {student_name} - {course_title}")
 
+	# Delete linked discussion topics first (to avoid foreign key constraint)
+	discussion_topics = frappe.get_all(
+		"Discussion Topic",
+		{"reference_doctype": "LMS Batch", "reference_docname": batch},
+		pluck="name"
+	)
+	for topic in discussion_topics:
+		frappe.delete_doc("Discussion Topic", topic, ignore_permissions=True, force=True)
+
 	# Delete course enrollment
 	course_enrollment = frappe.db.get_value(
 		"LMS Enrollment", {"member": student_email, "course": course}, "name"
 	)
 	if course_enrollment:
-		frappe.delete_doc("LMS Enrollment", course_enrollment, ignore_permissions=True)
+		frappe.delete_doc("LMS Enrollment", course_enrollment, ignore_permissions=True, force=True)
 
 	# Delete batch enrollment
 	batch_enrollment = frappe.db.get_value(
 		"LMS Batch Enrollment", {"member": student_email, "batch": batch}, "name"
 	)
 	if batch_enrollment:
-		frappe.delete_doc("LMS Batch Enrollment", batch_enrollment, ignore_permissions=True)
+		frappe.delete_doc("LMS Batch Enrollment", batch_enrollment, ignore_permissions=True, force=True)
 
 	# Delete the auto-batch itself
-	frappe.delete_doc("LMS Batch", batch, ignore_permissions=True)
+	frappe.delete_doc("LMS Batch", batch, ignore_permissions=True, force=True)
 
 	return {
 		"message": f"Course '{course_title}' unassigned from {student_name}",
@@ -165,3 +174,65 @@ def get_recent_assignments(limit=10):
 		e.student_name = frappe.db.get_value("User", e.member, "full_name") or e.member
 
 	return enrollments
+
+
+@frappe.whitelist()
+def get_all_assignments():
+	"""Get all course assignments with complete details including trainers."""
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator", "LMS Trainer"])
+
+	# Get all enrollments
+	enrollments = frappe.get_all(
+		"LMS Enrollment",
+		fields=["name", "member", "course", "progress", "creation"],
+		order_by="creation desc",
+	)
+
+	assignments = []
+	for enrollment in enrollments:
+		# Get basic info
+		course_title = frappe.db.get_value("LMS Course", enrollment.course, "title")
+		student_name = frappe.db.get_value("User", enrollment.member, "full_name") or enrollment.member
+
+		# Find the auto-batch for this student+course combination
+		batch_title_pattern = f"{student_name} - {course_title}"
+		batch = frappe.db.get_value(
+			"LMS Batch",
+			{"title": batch_title_pattern},
+			["name", "start_date", "end_date"],
+			as_dict=True
+		)
+
+		if not batch:
+			# Skip if no batch found (might be manually enrolled)
+			continue
+
+		# Get trainers/instructors for this batch
+		instructors = frappe.get_all(
+			"Course Instructor",
+			{"parent": batch.name, "parenttype": "LMS Batch"},
+			["instructor"],
+		)
+
+		trainers = [inst.instructor for inst in instructors]
+		trainers_names = ", ".join([
+			frappe.db.get_value("User", trainer, "full_name") or trainer
+			for trainer in trainers
+		]) if trainers else None
+
+		assignments.append({
+			"name": enrollment.name,
+			"member": enrollment.member,
+			"student_name": student_name,
+			"course": enrollment.course,
+			"course_title": course_title,
+			"batch": batch.name,
+			"trainers": trainers,
+			"trainers_names": trainers_names,
+			"start_date": batch.start_date,
+			"end_date": batch.end_date,
+			"progress": enrollment.progress or 0,
+			"creation": enrollment.creation,
+		})
+
+	return assignments

@@ -20,19 +20,25 @@
 		</Button>
 	</header>
 
-	<div class="md:w-3/4 md:mx-auto py-5 mx-5">
-		<div class="flex items-center justify-between mb-5">
-			<div v-if="assignmentCount" class="text-lg font-semibold text-ink-gray-9">
-				{{ __('{0} Assignments').format(assignmentCount) }}
+	<div class="py-5 mx-5">
+		<div class="flex items-center justify-between mb-4">
+			<div class="text-lg font-semibold text-ink-gray-7">
+				{{
+					assignments.data?.length
+						? __('{0} Assignments').format(assignments.data.length)
+						: __('No Assignments')
+				}}
 			</div>
-			<div
-				v-if="assignments.data?.length || assignmentCount > 0"
-				class="grid grid-cols-2 gap-5"
-			>
+			<div class="flex gap-3">
 				<FormControl
 					v-model="titleFilter"
-					:placeholder="__('Search by title')"
-				/>
+					type="text"
+					:placeholder="__('Search')"
+				>
+					<template #prefix>
+						<FeatherIcon name="search" class="size-4 text-ink-gray-5" />
+					</template>
+				</FormControl>
 				<FormControl
 					v-model="typeFilter"
 					type="select"
@@ -46,22 +52,56 @@
 			:columns="assignmentColumns"
 			:rows="assignments.data"
 			row-key="name"
-			:options="{
-				showTooltip: false,
-				selectable: false,
-				onRowClick: (row) => {
-					if (readOnlyMode) return
-					assignmentID = row.name
-					showAssignmentForm = true
-				},
-			}"
+			:options="{ showTooltip: false, selectable: true }"
 		>
+			<ListHeader
+				class="mb-2 grid items-center space-x-4 rounded bg-surface-gray-2 p-2"
+			>
+				<ListHeaderItem :item="item" v-for="item in assignmentColumns" :key="item.key">
+					<template #prefix="{ item }">
+						<FeatherIcon :name="item.icon?.toString()" class="h-4 w-4" />
+					</template>
+				</ListHeaderItem>
+			</ListHeader>
+			<ListRows>
+				<div
+					v-for="row in assignments.data"
+					:key="row.name"
+					@click="!readOnlyMode && openAssignment(row.name)"
+					class="cursor-pointer"
+				>
+					<ListRow :row="row">
+						<template #default="{ column, item }">
+							<ListRowItem :item="row[column.key]" :align="column.align">
+								<div
+									v-if="column.key == 'creation'"
+									class="text-xs text-ink-gray-5"
+								>
+									{{ row[column.key] }}
+								</div>
+								<div v-else>
+									{{ row[column.key] }}
+								</div>
+							</ListRowItem>
+						</template>
+					</ListRow>
+				</div>
+			</ListRows>
+			<ListSelectBanner>
+				<template #actions="{ unselectAll, selections }">
+					<div class="flex gap-2">
+						<Button
+							variant="ghost"
+							@click="deleteAssignments(selections, unselectAll)"
+						>
+							<FeatherIcon name="trash-2" class="h-4 w-4 stroke-1.5" />
+						</Button>
+					</div>
+				</template>
+			</ListSelectBanner>
 		</ListView>
 		<EmptyState v-else type="Assignments" />
-		<div
-			v-if="assignments.data && assignments.hasNextPage"
-			class="flex justify-center my-5"
-		>
+		<div v-if="assignments.hasNextPage" class="flex justify-center my-5">
 			<Button @click="assignments.next()">
 				{{ __('Load More') }}
 			</Button>
@@ -79,8 +119,16 @@ import {
 	Button,
 	call,
 	createListResource,
+	FeatherIcon,
 	FormControl,
 	ListView,
+	ListRows,
+	ListRow,
+	ListRowItem,
+	ListHeader,
+	ListHeaderItem,
+	ListSelectBanner,
+	toast,
 	usePageMeta,
 } from 'frappe-ui'
 import { computed, inject, onMounted, ref, watch } from 'vue'
@@ -92,84 +140,105 @@ import EmptyState from '@/components/EmptyState.vue'
 
 const user = inject('$user')
 const dayjs = inject('$dayjs')
+const { brand } = sessionStore()
+const router = useRouter()
+const route = useRoute()
 const titleFilter = ref('')
 const typeFilter = ref('')
 const showAssignmentForm = ref(false)
 const assignmentID = ref('new')
-const assignmentCount = ref(0)
-const { brand } = sessionStore()
-const router = useRouter()
-const route = useRoute()
 const readOnlyMode = window.read_only_mode
 
-watch(
-	() => user.data,
-	(userData) => {
-		if (!userData) return
-		if (!userData.is_moderator && !userData.is_instructor && !userData.is_trainer && !userData.is_master_trainer) {
-			router.push({ name: 'Courses' })
-		} else {
-			reloadAssignments()
-		}
-	},
-	{ immediate: true }
-)
+const assignmentFilters = ref({})
+
+const initAssignments = () => {
+	const userData = user.data
+	if (!userData) return false
+	if (!userData.is_moderator && !userData.is_instructor && !userData.is_trainer && !userData.is_master_trainer) {
+		router.push({ name: 'Courses' })
+		return true
+	}
+	delete assignmentFilters.value['owner']
+	assignments.update({ filters: { ...assignmentFilters.value } })
+	assignments.reload()
+	return true
+}
 
 onMounted(() => {
 	if (route.query.new === 'true') {
 		assignmentID.value = 'new'
 		showAssignmentForm.value = true
 	}
-	getAssignmentCount()
-	titleFilter.value = router.currentRoute.value.query.title
-	typeFilter.value = router.currentRoute.value.query.type
+	if (!initAssignments()) {
+		// user.data not ready yet, watch for it
+		const stop = watch(() => user.data, (userData) => {
+			if (!userData) return
+			initAssignments()
+			stop()
+		})
+	}
 })
 
-watch([titleFilter, typeFilter], () => {
-	router.push({
-		query: {
-			title: titleFilter.value,
-			type: typeFilter.value,
-		},
-	})
-	reloadAssignments()
-})
-
-const reloadAssignments = () => {
+watch(titleFilter, () => {
+	assignmentFilters.value['title'] = ['like', `%${titleFilter.value}%`]
 	assignments.update({
-		filters: assignmentFilter.value,
+		filters: assignmentFilters.value,
 	})
 	assignments.reload()
-}
+})
 
-const assignmentFilter = computed(() => {
-	let filters = {}
-	if (titleFilter.value) {
-		filters.title = ['like', `%${titleFilter.value}%`]
-	}
+watch(typeFilter, () => {
 	if (typeFilter.value) {
-		filters.type = typeFilter.value
+		assignmentFilters.value['type'] = typeFilter.value
+	} else {
+		delete assignmentFilters.value['type']
 	}
-	if (!user.data?.is_moderator && !user.data?.is_master_trainer && !user.data?.is_trainer) {
-		filters.owner = user.data?.email
-	}
-	return filters
+	assignments.update({
+		filters: assignmentFilters.value,
+	})
+	assignments.reload()
 })
 
 const assignments = createListResource({
 	doctype: 'LMS Assignment',
-	fields: ['name', 'title', 'type', 'creation', 'question', 'course'],
+	filters: assignmentFilters,
+	fields: ['name', 'title', 'type', 'creation'],
+	auto: false,
+	cache: ['assignments', user.data?.name],
 	orderBy: 'modified desc',
-	cache: ['assignments'],
 	transform(data) {
-		return data.map((row) => {
+		return data.map((assignment) => {
 			return {
-				...row,
-				creation: dayjs(row.creation).fromNow(),
+				...assignment,
+				creation: dayjs(assignment.creation).fromNow(),
 			}
 		})
 	},
 })
+
+const openAssignment = (name) => {
+	assignmentID.value = name
+	showAssignmentForm.value = true
+}
+
+const deleteAssignments = async (selections, unselectAll) => {
+	try {
+		// Wait for all deletions to complete
+		const deletePromises = Array.from(selections).map(assignmentName =>
+			call('lms.lms.api.delete_assignment', {
+				assignment_name: assignmentName
+			})
+		)
+
+		await Promise.all(deletePromises)
+		unselectAll()
+		toast.success(__('Assignments deleted successfully'))
+		await assignments.reload()
+	} catch (error) {
+		console.error('Error deleting assignments:', error)
+		toast.error(__('Error deleting assignments'))
+	}
+}
 
 const assignmentColumns = computed(() => {
 	return [
@@ -177,46 +246,45 @@ const assignmentColumns = computed(() => {
 			label: __('Title'),
 			key: 'title',
 			width: 2,
+			icon: 'file-text',
 		},
 		{
 			label: __('Type'),
 			key: 'type',
 			width: 1,
-			align: 'left',
+			align: 'center',
+			icon: 'tag',
 		},
 		{
 			label: __('Created'),
 			key: 'creation',
 			width: 1,
-			align: 'right',
+			align: 'center',
+			icon: 'clock',
 		},
 	]
 })
-
-const getAssignmentCount = () => {
-	call('frappe.client.get_count', {
-		doctype: 'LMS Assignment',
-	}).then((data) => {
-		assignmentCount.value = data
-	})
-}
 
 const assignmentTypes = computed(() => {
 	let types = ['', 'Document', 'Image', 'PDF', 'URL', 'Text']
 	return types.map((type) => {
 		return {
-			label: __(type),
+			label: type ? __(type) : __('All Types'),
 			value: type,
 		}
 	})
 })
 
-const breadcrumbs = computed(() => [
-	{
-		label: 'Assignments',
-		route: { name: 'Assignments' },
-	},
-])
+const breadcrumbs = computed(() => {
+	return [
+		{
+			label: __('Assignments'),
+			route: {
+				name: 'Assignments',
+			},
+		},
+	]
+})
 
 usePageMeta(() => {
 	return {

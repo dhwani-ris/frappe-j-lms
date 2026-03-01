@@ -2140,3 +2140,64 @@ def get_my_assignment_submission(assignment):
 		"name",
 	)
 	return {"name": submission or None}
+
+
+@frappe.whitelist()
+def delete_assignment(assignment_name):
+	"""Delete an assignment along with all its submissions."""
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator", "LMS Trainer", "LMS Instructor"])
+
+	if not frappe.db.exists("LMS Assignment", assignment_name):
+		frappe.throw(_("Assignment {0} does not exist").format(assignment_name))
+
+	# Get all submissions for this assignment
+	submissions = frappe.get_all(
+		"LMS Assignment Submission",
+		{"assignment": assignment_name},
+		pluck="name"
+	)
+
+	# Delete all submissions first
+	for submission in submissions:
+		frappe.delete_doc("LMS Assignment Submission", submission, ignore_permissions=True, force=True)
+
+	# Now delete the assignment
+	frappe.delete_doc("LMS Assignment", assignment_name, ignore_permissions=True, force=True)
+
+	return {
+		"message": _("Assignment deleted successfully"),
+		"submissions_deleted": len(submissions)
+	}
+
+
+@frappe.whitelist()
+def debug_batch_permissions():
+	"""Debug endpoint to check current user's batch permissions."""
+	user_roles = frappe.get_roles(frappe.session.user)
+	is_super = any(
+		r in user_roles
+		for r in [
+			"System Manager",
+			"LMS HR",
+			"LMS Master Trainer",
+		]
+	)
+
+	# Get all batches
+	all_batches = frappe.get_all("LMS Batch", pluck="name")
+
+	# Get enrolled batches
+	enrolled_batches = frappe.get_all(
+		"LMS Batch Enrollment", {"member": frappe.session.user}, pluck="batch"
+	)
+
+	return {
+		"session_user": frappe.session.user,
+		"user_roles": user_roles,
+		"is_super": is_super,
+		"is_administrator": frappe.session.user in ("Guest", "Administrator"),
+		"total_batches": len(all_batches),
+		"enrolled_batches": len(enrolled_batches),
+		"all_batch_names": all_batches,
+		"enrolled_batch_names": enrolled_batches
+	}

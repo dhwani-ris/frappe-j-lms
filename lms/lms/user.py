@@ -23,6 +23,24 @@ def after_insert(doc, method):
 	doc.add_roles("LMS Student")
 
 
+def on_update(doc, method):
+	"""Auto-assign LMS Student role when Jamboree role profile is assigned."""
+	jamboree_role_profiles = [
+		"Jamboree Employee",
+		"Jamboree Trainer",
+		"Jamboree Master Trainer",
+		"Jamboree Manager",
+		"Jamboree HR"
+	]
+
+	# Check if user has a Jamboree role profile
+	if doc.role_profile_name and doc.role_profile_name in jamboree_role_profiles:
+		# Ensure LMS Student role is assigned (works behind the scenes)
+		current_roles = [r.role for r in doc.roles]
+		if "LMS Student" not in current_roles:
+			doc.add_roles("LMS Student")
+
+
 @frappe.whitelist(allow_guest=True)
 def sign_up(email, full_name, verify_terms, user_category):
 	if is_signup_disabled():
