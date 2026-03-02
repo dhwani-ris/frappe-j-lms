@@ -259,7 +259,21 @@ const assignment = createResource({
 	},
 	auto: true,
 	onSuccess(data) {
-		// Always look up the current user's submission to avoid stale/wrong submission URLs
+		// Check if user is a grader (can view other users' submissions)
+		const canGrade = user.data?.is_moderator ||
+			user.data?.is_evaluator ||
+			user.data?.is_instructor ||
+			user.data?.is_trainer ||
+			user.data?.is_master_trainer ||
+			user.data?.is_lms_hr
+
+		// If viewing an existing submission and user can grade, load it directly without redirect
+		if (canGrade && props.submissionName != 'new') {
+			submissionResource.reload()
+			return
+		}
+
+		// For regular users, look up their own submission to avoid stale/wrong submission URLs
 		call('lms.lms.api.get_my_assignment_submission', {
 			assignment: props.assignmentID,
 		}).then((res) => {

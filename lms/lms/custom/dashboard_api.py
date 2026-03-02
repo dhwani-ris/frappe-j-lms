@@ -29,10 +29,10 @@ def get_manager_dashboard():
 	frappe.only_for(["LMS Manager", "LMS Master Trainer", "LMS HR", "System Manager", "Moderator"])
 
 	user_roles = frappe.get_roles(frappe.session.user)
-	is_super = "System Manager" in user_roles or "Moderator" in user_roles or "LMS HR" in user_roles
+	is_super = "System Manager" in user_roles or "LMS HR" in user_roles
 
 	if is_super:
-		# System Manager / Moderator / HR: show ALL active employees
+		# System Manager / HR: show ALL active employees
 		reports = frappe.get_all(
 			"Employee",
 			filters={"status": "Active"},
@@ -124,10 +124,10 @@ def get_trainer_dashboard():
 	frappe.only_for(["LMS Trainer", "LMS Master Trainer", "LMS HR", "System Manager", "Moderator"])
 
 	user_roles = frappe.get_roles(frappe.session.user)
-	is_super = "System Manager" in user_roles or "Moderator" in user_roles or "LMS HR" in user_roles
+	is_super = "System Manager" in user_roles or "LMS HR" in user_roles or "LMS Master Trainer" in user_roles
 
 	if is_super:
-		# System Manager / Moderator / HR: show ALL batches
+		# System Manager / HR / Master Trainer: show ALL batches
 		batch_names = frappe.get_all("LMS Batch", pluck="name")
 		instructor_courses = frappe.get_all("LMS Course", pluck="name")
 	else:
@@ -207,6 +207,7 @@ def get_trainer_dashboard():
 			student.status = calculate_status(student.avg_progress)
 			student.user_image = frappe.db.get_value("User", student.member, "user_image")
 			student.quiz_scores = quiz_submissions
+			student.quiz_count = len(quiz_submissions)
 			student.avg_quiz_score = (
 				round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
 				if quiz_submissions
@@ -295,6 +296,7 @@ def get_trainer_dashboard():
 			)
 
 			student["quiz_scores"] = quiz_submissions
+			student["quiz_count"] = len(quiz_submissions)
 			student["avg_quiz_score"] = (
 				round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
 				if quiz_submissions
@@ -450,7 +452,7 @@ def export_team_progress(manager_employee_id=None):
 	frappe.only_for(["LMS Manager", "LMS Master Trainer", "LMS HR", "System Manager", "Moderator"])
 
 	user_roles = frappe.get_roles(frappe.session.user)
-	is_super = "System Manager" in user_roles or "Moderator" in user_roles or "LMS HR" in user_roles
+	is_super = "System Manager" in user_roles or "LMS HR" in user_roles
 
 	if is_super and not manager_employee_id:
 		reports = frappe.get_all(

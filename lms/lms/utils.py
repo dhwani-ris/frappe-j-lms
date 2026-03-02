@@ -2419,7 +2419,7 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 def _apply_jamboree_batch_visibility(filters):
     """Restrict batch visibility based on Jamboree roles.
 
-    - System Manager / Moderator / HR / Master Trainer: see all
+    - System Manager / HR / Master Trainer: see all
     - Trainer: enrolled + batches where they are instructor
     - Manager: enrolled + team members' batches
     - Student/Employee: only enrolled batches
@@ -2432,10 +2432,8 @@ def _apply_jamboree_batch_visibility(filters):
         r in user_roles
         for r in [
             "System Manager",
-            "Moderator",
             "LMS HR",
             "LMS Master Trainer",
-            "Course Creator",
         ]
     )
     if is_super:
