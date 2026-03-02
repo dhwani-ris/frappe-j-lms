@@ -207,7 +207,7 @@
 										</div>
 										<div
 											class="text-xs cursor-pointer hover:text-blue-600 hover:underline"
-											@click.stop="router.push({ name: 'AssignmentSubmissionList' })"
+											@click.stop="router.push({ name: 'AssignmentSubmissionList', query: { member: student.member } })"
 										>
 											<span class="font-semibold">{{ student.assignment_count || 0 }}</span> {{ __('Assignments') }}
 										</div>

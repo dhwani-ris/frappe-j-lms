@@ -214,6 +214,7 @@ def get_trainer_dashboard():
 				else 0
 			)
 			student.assignment_scores = assignment_submissions
+			student.assignment_count = len(assignment_submissions)
 			passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
 			student.assignments_passed = passed_assignments
 			student.assignments_total = len(assignment_submissions)
@@ -303,6 +304,7 @@ def get_trainer_dashboard():
 				else 0
 			)
 			student["assignment_scores"] = assignment_submissions
+			student["assignment_count"] = len(assignment_submissions)
 			passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
 			student["assignments_passed"] = passed_assignments
 			student["assignments_total"] = len(assignment_submissions)
