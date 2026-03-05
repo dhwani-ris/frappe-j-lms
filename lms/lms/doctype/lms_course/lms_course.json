@@ -24,6 +24,7 @@
   "upcoming",
   "featured",
   "disable_self_learning",
+  "enable_sequential_learning",
   "section_break_18",
   "short_introduction",
   "column_break_viqw",
@@ -93,7 +94,14 @@
    "default": "0",
    "fieldname": "disable_self_learning",
    "fieldtype": "Check",
-   "label": "Disable Self Learning"
+   "label": "Disable Self Enrollment"
+  },
+  {
+   "default": "0",
+   "description": "Lock chapters/lessons until previous ones are completed",
+   "fieldname": "enable_sequential_learning",
+   "fieldtype": "Check",
+   "label": "Enable Sequential Learning"
   },
   {
    "fieldname": "image",

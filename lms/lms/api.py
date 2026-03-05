@@ -2201,3 +2201,41 @@ def debug_batch_permissions():
 		"all_batch_names": all_batches,
 		"enrolled_batch_names": enrolled_batches
 	}
+
+
+@frappe.whitelist()
+def get_lms_trainers(txt=""):
+	"""Get users with LMS Trainer role for instructor selection"""
+	trainers = frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name as value, u.full_name as description
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` hr ON hr.parent = u.name
+		WHERE hr.role = 'LMS Trainer'
+			AND u.enabled = 1
+			AND (u.name LIKE %(txt)s OR u.full_name LIKE %(txt)s)
+		ORDER BY u.full_name
+		LIMIT 20
+		""",
+		{"txt": f"%{txt}%"},
+		as_dict=1,
+	)
+	return trainers
+
+
+@frappe.whitelist()
+def get_course_instructors(course):
+	"""Get instructors assigned to a specific course"""
+	if not course:
+		return []
+
+	instructors = frappe.db.sql(
+		"""
+		SELECT instructor
+		FROM `tabCourse Instructor`
+		WHERE parent = %(course)s
+		""",
+		{"course": course},
+		as_dict=1,
+	)
+	return instructors

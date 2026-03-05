@@ -40,8 +40,14 @@
 							<DisclosureButton
 								ref=""
 								class="flex items-center w-full p-2 group"
+								:class="{ 'opacity-50 cursor-not-allowed': chapter.is_locked }"
 							>
+								<Lock
+									v-if="chapter.is_locked && !allowEdit"
+									class="h-4 w-4 text-ink-gray-7 stroke-1.5 mr-2"
+								/>
 								<ChevronRight
+									v-else
 									:class="{
 										'rotate-90 transform duration-200': open,
 										'duration-200': !open,
@@ -52,11 +58,18 @@
 								/>
 								<div
 									class="text-base text-left text-ink-gray-9 font-medium leading-5 ml-2"
-									@click="redirectToChapter(chapter)"
+									@click="!chapter.is_locked && redirectToChapter(chapter)"
 								>
 									{{ chapter.title }}
 								</div>
 								<div class="flex ml-auto space-x-4">
+									<Tooltip
+										v-if="chapter.is_locked && !allowEdit"
+										:text="__('Complete previous chapter to unlock')"
+										placement="bottom"
+									>
+										<Info class="h-4 w-4 text-ink-gray-7" />
+									</Tooltip>
 									<Tooltip :text="__('Edit Chapter')" placement="bottom">
 										<FilePenLine
 											v-if="allowEdit"
@@ -73,7 +86,7 @@
 									</Tooltip>
 								</div>
 							</DisclosureButton>
-							<DisclosurePanel v-if="!chapter.is_scorm_package">
+							<DisclosurePanel v-if="!chapter.is_scorm_package && !chapter.is_locked">
 								<Draggable
 									v-if="!chapter.is_scorm_package"
 									:list="chapter.lessons"
@@ -173,6 +186,8 @@ import {
 	FileText,
 	FilePenLine,
 	HelpCircle,
+	Info,
+	Lock,
 	MonitorPlay,
 	Trash2,
 } from 'lucide-vue-next'

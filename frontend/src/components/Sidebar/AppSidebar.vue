@@ -1,13 +1,11 @@
 <template>
 	<div
-		class="flex h-full flex-col justify-between transition-all duration-300 ease-in-out border-r bg-surface-menu-bar"
-		:class="sidebarStore.isSidebarCollapsed ? 'w-14' : 'w-56'"
+		class="flex h-full flex-col justify-between transition-all duration-300 ease-in-out border-r bg-surface-menu-bar w-56"
 	>
 		<div
 			class="flex flex-col overflow-hidden"
-			:class="sidebarStore.isSidebarCollapsed ? 'items-center' : ''"
 		>
-			<UserDropdown :isCollapsed="sidebarStore.isSidebarCollapsed" />
+			<UserDropdown :isCollapsed="false" />
 			<div class="flex flex-col" v-if="sidebarSettings.data">
 				<div v-for="link in sidebarLinks" class="mx-2 my-2.5">
 					<div
@@ -20,7 +18,7 @@
 						<div v-for="item in link.items">
 							<SidebarLink
 								:link="item"
-								:isCollapsed="sidebarStore.isSidebarCollapsed"
+								:isCollapsed="false"
 							/>
 						</div>
 					</nav>
@@ -31,12 +29,10 @@
 				class="mt-4"
 			>
 				<div
-					class="flex items-center justify-between pr-2 cursor-pointer"
-					:class="sidebarStore.isSidebarCollapsed ? 'pl-3' : 'pl-4'"
+					class="flex items-center justify-between pr-2 cursor-pointer pl-4"
 					@click="toggleWebPages"
 				>
 					<div
-						v-if="!sidebarStore.isSidebarCollapsed"
 						class="flex items-center text-sm text-ink-gray-5 my-1"
 					>
 						<span class="grid h-5 w-6 flex-shrink-0 place-items-center">
@@ -70,7 +66,7 @@
 					>
 						<SidebarLink
 							:link="link"
-							:isCollapsed="sidebarStore.isSidebarCollapsed"
+							:isCollapsed="false"
 							:showControls="isModerator ? true : false"
 							@openModal="openPageModal"
 							@deletePage="deletePage"
@@ -81,7 +77,7 @@
 		</div>
 		<div class="m-2 flex flex-col gap-1">
 			<div
-				v-if="readOnlyMode && !sidebarStore.isSidebarCollapsed"
+				v-if="readOnlyMode"
 				class="z-10 m-2 bg-surface-modal py-2.5 px-3 text-xs text-ink-gray-7 leading-5 rounded-md"
 			>
 				{{
@@ -94,44 +90,16 @@
 				v-if="
 					userResource.data?.is_system_manager && userResource.data?.is_fc_site
 				"
-				:isSidebarCollapsed="sidebarStore.isSidebarCollapsed"
+				:isSidebarCollapsed="false"
 			/>
 			<GettingStartedBanner
 				v-if="showOnboarding && !isOnboardingStepsCompleted"
-				:isSidebarCollapsed="sidebarStore.isSidebarCollapsed"
+				:isSidebarCollapsed="false"
 				appName="learning"
 			/>
 
-			<div
-				class="flex items-center mt-4"
-				:class="
-					sidebarStore.isSidebarCollapsed ? 'flex-col space-y-3' : 'flex-row'
-				"
-			>
-				<div
-					class="flex items-center flex-1"
-					:class="
-						sidebarStore.isSidebarCollapsed
-							? 'flex-col space-y-3'
-							: 'flex-row space-x-3'
-					"
-				>
-					<Tooltip v-if="readOnlyMode && sidebarStore.isSidebarCollapsed">
-						<CircleAlert
-							class="size-4 stroke-1.5 text-ink-gray-7 cursor-pointer"
-						/>
-						<template #body>
-							<div
-								class="max-w-[30ch] rounded bg-surface-gray-7 px-2 py-1 text-center text-p-xs text-ink-white shadow-xl"
-							>
-								{{
-									__(
-										'This site is being updated. You will not be able to make any changes. Full access will be restored shortly.'
-									)
-								}}
-							</div>
-						</template>
-					</Tooltip>
+			<div class="flex items-center mt-4 flex-row">
+				<div class="flex items-center flex-1 flex-row space-x-3">
 					<Tooltip :text="__('Powered by Learning')">
 						<Zap
 							class="size-4 stroke-1.5 text-ink-gray-7 cursor-pointer"
@@ -150,19 +118,6 @@
 						/>
 					</Tooltip>
 				</div>
-				<Tooltip
-					:text="
-						sidebarStore.isSidebarCollapsed ? __('Expand') : __('Collapse')
-					"
-				>
-					<CollapseSidebar
-						class="size-4 text-ink-gray-7 duration-300 stroke-1.5 ease-in-out cursor-pointer"
-						:class="{
-							'[transform:rotateY(180deg)]': sidebarStore.isSidebarCollapsed,
-						}"
-						@click="toggleSidebar()"
-					/>
-				</Tooltip>
 			</div>
 		</div>
 		<HelpModal
@@ -213,7 +168,6 @@ import {
 } from 'vue'
 import {
 	BookOpen,
-	CircleAlert,
 	ChevronRight,
 	Plus,
 	CircleHelp,
@@ -236,7 +190,6 @@ import {
 } from 'frappe-ui/frappe'
 import InviteIcon from '@/components/Icons/InviteIcon.vue'
 import UserDropdown from '@/components/Sidebar/UserDropdown.vue'
-import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import SidebarLink from '@/components/Sidebar/SidebarLink.vue'
 import CommandPalette from '@/components/CommandPalette/CommandPalette.vue'
 

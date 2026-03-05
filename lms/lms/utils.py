@@ -1126,6 +1126,40 @@ def get_categorized_courses(courses):
     }
 
 
+def is_chapter_complete(course, chapter, lessons):
+	"""Check if all lessons in a chapter are complete."""
+	if not lessons:
+		return True
+
+	for lesson in lessons:
+		progress = frappe.db.get_value(
+			"LMS Course Progress",
+			{
+				"course": course,
+				"lesson": lesson.name,
+				"member": frappe.session.user,
+			},
+			"status",
+		)
+		if progress != "Complete":
+			return False
+	return True
+
+
+def is_scorm_chapter_complete(course, chapter):
+	"""Check if SCORM chapter is complete."""
+	progress = frappe.db.get_value(
+		"LMS Course Progress",
+		{
+			"course": course,
+			"chapter": chapter,
+			"member": frappe.session.user,
+		},
+		"status",
+	)
+	return progress == "Complete"
+
+
 @frappe.whitelist(allow_guest=True)
 def get_course_outline(course, progress=False):
     """Returns the course outline."""
@@ -1133,7 +1167,12 @@ def get_course_outline(course, progress=False):
     chapters = frappe.get_all(
         "Chapter Reference", {"parent": course}, ["chapter", "idx"], order_by="idx"
     )
-    for chapter in chapters:
+
+    # Check if sequential learning is enabled
+    enable_sequential = frappe.db.get_value("LMS Course", course, "enable_sequential_learning")
+    all_previous_chapters_complete = True  # First chapter is always unlocked
+
+    for chapter_idx, chapter in enumerate(chapters):
         chapter_details = frappe.db.get_value(
             "Course Chapter",
             chapter.chapter,
@@ -1152,6 +1191,23 @@ def get_course_outline(course, progress=False):
                 ["file_name", "file_size", "file_url"],
                 as_dict=1,
             )
+
+        # Sequential learning logic
+        if enable_sequential and frappe.session.user != "Guest":
+            # Lock this chapter if any previous chapter is incomplete
+            chapter_details["is_locked"] = not all_previous_chapters_complete
+
+            # Check if current chapter is complete
+            if not chapter_details.is_scorm_package:
+                chapter_complete = is_chapter_complete(course, chapter.chapter, chapter_details.lessons)
+            else:
+                chapter_complete = is_scorm_chapter_complete(course, chapter.chapter)
+
+            # If this chapter is not complete, all subsequent chapters should be locked
+            if not chapter_complete:
+                all_previous_chapters_complete = False
+        else:
+            chapter_details["is_locked"] = False
 
         outline.append(chapter_details)
     return outline
