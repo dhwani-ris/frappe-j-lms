@@ -116,9 +116,25 @@ def quiz_summary(quiz, results):
 			"course",
 			"enable_negative_marking",
 			"marks_to_cut",
+			"max_attempts",
 		],
 		as_dict=1,
 	)
+
+	# Check if user has exceeded max attempts
+	if quiz_details.max_attempts:
+		attempt_count = frappe.db.count(
+			"LMS Quiz Submission",
+			{
+				"quiz": quiz,
+				"member": frappe.session.user,
+			}
+		)
+
+		if attempt_count >= quiz_details.max_attempts:
+			frappe.throw(
+				_("You have exhausted all {0} attempts for this quiz.").format(quiz_details.max_attempts)
+			)
 
 	data = process_results(results, quiz_details)
 	results = data["results"]
@@ -135,7 +151,7 @@ def quiz_summary(quiz, results):
 		"score": score,
 		"score_out_of": score_out_of,
 		"submission": submission.name,
-		"pass": percentage == quiz_details.passing_percentage,
+		"pass": percentage >= quiz_details.passing_percentage,
 		"percentage": percentage,
 		"is_open_ended": is_open_ended,
 	}
@@ -251,9 +267,8 @@ def create_submission(quiz, results, score_out_of, passing_percentage):
 
 
 def save_progress_after_quiz(quiz_details, percentage):
+	# Only save progress if quiz is passed
 	if percentage >= quiz_details.passing_percentage and quiz_details.lesson and quiz_details.course:
-		save_progress(quiz_details.lesson, quiz_details.course)
-	elif not quiz_details.passing_percentage:
 		save_progress(quiz_details.lesson, quiz_details.course)
 
 

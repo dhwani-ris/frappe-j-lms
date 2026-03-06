@@ -332,6 +332,25 @@ watch([searchQuery, courseFilter, trainerFilter], () => {
 	currentPage.value = 1
 })
 
+// Reload course instructors when course selection changes
+watch(selectedCourse, (newCourse) => {
+	if (newCourse) {
+		const courseValue = typeof newCourse === 'object' ? newCourse.value : newCourse
+		courseInstructors.update({
+			params: {
+				course: courseValue,
+			}
+		})
+		courseInstructors.reload()
+		// Clear selected trainers when course changes
+		selectedTrainers.value = []
+	} else {
+		// Reset instructors when course is cleared
+		courseInstructors.data = null
+		selectedTrainers.value = []
+	}
+})
+
 const allUsers = createResource({
 	url: 'lms.lms.api.get_all_users',
 	auto: true,
@@ -346,6 +365,13 @@ const allCourses = createResource({
 		limit_page_length: 0,
 	},
 	auto: true,
+})
+
+const courseInstructors = createResource({
+	url: 'lms.lms.api.get_course_instructors',
+	params: {
+		course: '',
+	},
 })
 
 const allAssignments = createResource({
@@ -377,6 +403,19 @@ const courseOptions = computed(() => {
 
 const trainerOptions = computed(() => {
 	if (!allUsers.data) return []
+
+	// If a course is selected, filter trainers to only show course instructors
+	if (selectedCourse.value && courseInstructors.data) {
+		const instructorEmails = courseInstructors.data.map(i => i.instructor)
+		return Object.values(allUsers.data)
+			.filter((user) => instructorEmails.includes(user.name))
+			.map((user) => ({
+				label: user.full_name || user.name,
+				value: user.name,
+			}))
+	}
+
+	// If no course is selected, show all trainers
 	return Object.values(allUsers.data)
 		.filter((user) => user.is_trainer || user.is_master_trainer)
 		.map((user) => ({

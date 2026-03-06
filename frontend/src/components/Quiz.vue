@@ -40,6 +40,9 @@
 							: `${quiz.data.max_attempts} times`
 					)
 				}}
+				<span v-if="attempts.data" class="font-semibold ml-1">
+					({{ __('Attempts') }}: {{ attempts.data.length }}/{{ quiz.data.max_attempts }})
+				</span>
 			</div>
 			<div v-if="quiz.data.enable_negative_marking" class="leading-5">
 				{{
@@ -270,6 +273,9 @@
 						(loadedSubmission || quizSubmission.data).score_out_of
 					)
 				}}
+			</div>
+			<div v-if="quiz.data.max_attempts && attempts.data" class="text-ink-gray-7 text-sm">
+				{{ __('Attempts') }}: {{ attempts.data.length }}/{{ quiz.data.max_attempts }}
 			</div>
 			<div class="space-x-2">
 				<Button

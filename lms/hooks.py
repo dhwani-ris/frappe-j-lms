@@ -43,12 +43,14 @@ web_include_js = []
 # ----------
 
 # application home page (will override Website Settings)
-# home_page = "login"
+home_page = "lms"
 
 # website user home page (by Role)
-# role_home_page = {
-# 	"Role": "home_page"
-# }
+role_home_page = {
+	"System Manager": "lms",
+	"Guest": "lms",
+	"All": "lms"
+}
 
 # Generators
 # ----------
@@ -271,3 +273,6 @@ add_to_apps_screen = [
 
 sqlite_search = ["lms.sqlite.LearningSearch"]
 auth_hooks = ["lms.auth.authenticate"]
+
+# Boot session - filter apps to show only LMS
+boot_session = "lms.boot.boot_session"

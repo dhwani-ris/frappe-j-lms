@@ -12,6 +12,7 @@
   {
    "fieldname": "instructor",
    "fieldtype": "Link",
+   "get_query": "lms.lms.doctype.course_instructor.course_instructor.instructor_query",
    "in_list_view": 1,
    "label": "Instructor",
    "options": "User"

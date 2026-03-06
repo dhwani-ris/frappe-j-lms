@@ -38,11 +38,9 @@
 							/>
 						</div>
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-							<MultiSelect
+							<InstructorSelect
 								v-model="instructors"
-								doctype="User"
 								:label="__('Instructors')"
-								:filters="{ ignore_user_type: 1 }"
 								:onCreate="(close) => openSettings('Members', close)"
 								:required="true"
 							/>
@@ -125,6 +123,11 @@
 									type="checkbox"
 									v-model="course.disable_self_learning"
 									:label="__('Disable Self Enrollment')"
+								/>
+								<FormControl
+									type="checkbox"
+									v-model="course.enable_sequential_learning"
+									:label="__('Enable Sequential Learning')"
 								/>
 							</div>
 						</div>
@@ -313,6 +316,7 @@ import { sessionStore } from '../stores/session'
 import Link from '@/components/Controls/Link.vue'
 import CourseOutline from '@/components/CourseOutline.vue'
 import MultiSelect from '@/components/Controls/MultiSelect.vue'
+import InstructorSelect from '@/components/Controls/InstructorSelect.vue'
 import ColorSwatches from '@/components/Controls/ColorSwatches.vue'
 import Uploader from '@/components/Controls/Uploader.vue'
 
@@ -347,6 +351,7 @@ const course = reactive({
 	featured: false,
 	upcoming: false,
 	disable_self_learning: false,
+	enable_sequential_learning: false,
 	enable_certification: false,
 	paid_course: false,
 	paid_certificate: false,
@@ -461,6 +466,7 @@ const courseResource = createResource({
 			'published',
 			'upcoming',
 			'disable_self_learning',
+			'enable_sequential_learning',
 			'paid_course',
 			'featured',
 			'enable_certification',
