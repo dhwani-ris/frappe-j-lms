@@ -158,6 +158,7 @@ fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
 #
 override_whitelisted_methods = {
     # "frappe.desk.search.get_names_for_mentions": "lms.lms.utils.get_names_for_mentions",
+    "frappe.apps.get_apps": "lms.boot.get_apps_override",
 }
 #
 # each overriding function accepts a `data` argument;
@@ -276,3 +277,4 @@ auth_hooks = ["lms.auth.authenticate"]
 
 # Boot session - filter apps to show only LMS
 boot_session = "lms.boot.boot_session"
+extend_bootinfo = "lms.boot.extend_bootinfo"
