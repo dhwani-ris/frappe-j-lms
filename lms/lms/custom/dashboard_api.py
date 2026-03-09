@@ -228,102 +228,103 @@ def get_trainer_dashboard():
 		batch.students = students
 		batches_data.append(batch)
 
-	# Add students enrolled directly in courses (not via batches)
-	if instructor_courses:
-		# Create a virtual "Direct Course Enrollments" batch for students not in any batch
-		course_enrollments = frappe.get_all(
-			"LMS Enrollment",
-			{"course": ["in", instructor_courses]},
-			["member", "course", "progress"],
-		)
+	# DISABLED: Add students enrolled directly in courses (not via batches)
+	# Trainers should only see students enrolled through batches
+	# if instructor_courses:
+	# 	# Create a virtual "Direct Course Enrollments" batch for students not in any batch
+	# 	course_enrollments = frappe.get_all(
+	# 		"LMS Enrollment",
+	# 		{"course": ["in", instructor_courses]},
+	# 		["member", "course", "progress"],
+	# 	)
 
-		# Group by student
-		students_by_member = {}
-		for enrollment in course_enrollments:
-			if enrollment.member not in students_by_member:
-				member_name = frappe.db.get_value("User", enrollment.member, "full_name")
-				students_by_member[enrollment.member] = {
-					"member": enrollment.member,
-					"member_name": member_name or enrollment.member,
-					"enrollments": [],
-				}
+	# 	# Group by student
+	# 	students_by_member = {}
+	# 	for enrollment in course_enrollments:
+	# 		if enrollment.member not in students_by_member:
+	# 			member_name = frappe.db.get_value("User", enrollment.member, "full_name")
+	# 			students_by_member[enrollment.member] = {
+	# 				"member": enrollment.member,
+	# 				"member_name": member_name or enrollment.member,
+	# 				"enrollments": [],
+	# 			}
 
-			# Add course details
-			course_title = frappe.db.get_value("LMS Course", enrollment.course, "title")
-			students_by_member[enrollment.member]["enrollments"].append({
-				"course": enrollment.course,
-				"course_title": course_title,
-				"progress": enrollment.progress,
-				"status": calculate_status(cint(enrollment.progress)),
-			})
+	# 		# Add course details
+	# 		course_title = frappe.db.get_value("LMS Course", enrollment.course, "title")
+	# 		students_by_member[enrollment.member]["enrollments"].append({
+	# 			"course": enrollment.course,
+	# 			"course_title": course_title,
+	# 			"progress": enrollment.progress,
+	# 			"status": calculate_status(cint(enrollment.progress)),
+	# 		})
 
-		# Create students list for direct enrollments
-		direct_students = []
-		for member, student_data in students_by_member.items():
-			# Skip if already in a batch
-			if member in seen_students:
-				continue
+	# 	# Create students list for direct enrollments
+	# 	direct_students = []
+	# 	for member, student_data in students_by_member.items():
+	# 		# Skip if already in a batch
+	# 		if member in seen_students:
+	# 			continue
 
-			student = student_data
-			enrollments = student["enrollments"]
-			student["avg_progress"] = (
-				round(sum(cint(e["progress"]) for e in enrollments) / len(enrollments), 1)
-				if enrollments
-				else 0
-			)
-			student["total_courses"] = len(enrollments)
-			student["status"] = calculate_status(student["avg_progress"])
-			student["user_image"] = frappe.db.get_value("User", member, "user_image")
+	# 		student = student_data
+	# 		enrollments = student["enrollments"]
+	# 		student["avg_progress"] = (
+	# 			round(sum(cint(e["progress"]) for e in enrollments) / len(enrollments), 1)
+	# 			if enrollments
+	# 			else 0
+	# 		)
+	# 		student["total_courses"] = len(enrollments)
+	# 		student["status"] = calculate_status(student["avg_progress"])
+	# 		student["user_image"] = frappe.db.get_value("User", member, "user_image")
 
-			# Get quiz scores
-			quiz_submissions = frappe.get_all(
-				"LMS Quiz Submission",
-				{"member": member},
-				["quiz", "score", "percentage", "creation"],
-				order_by="creation desc",
-				limit=5
-			)
-			for quiz_sub in quiz_submissions:
-				quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
-				quiz_sub.quiz_title = quiz_title
+	# 		# Get quiz scores
+	# 		quiz_submissions = frappe.get_all(
+	# 			"LMS Quiz Submission",
+	# 			{"member": member},
+	# 			["quiz", "score", "percentage", "creation"],
+	# 			order_by="creation desc",
+	# 			limit=5
+	# 		)
+	# 		for quiz_sub in quiz_submissions:
+	# 			quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
+	# 			quiz_sub.quiz_title = quiz_title
 
-			# Get assignment scores
-			assignment_submissions = frappe.get_all(
-				"LMS Assignment Submission",
-				{"member": member},
-				["assignment", "status", "assignment_title", "modified"],
-				order_by="modified desc",
-				limit=5
-			)
+	# 		# Get assignment scores
+	# 		assignment_submissions = frappe.get_all(
+	# 			"LMS Assignment Submission",
+	# 			{"member": member},
+	# 			["assignment", "status", "assignment_title", "modified"],
+	# 			order_by="modified desc",
+	# 			limit=5
+	# 		)
 
-			student["quiz_scores"] = quiz_submissions
-			student["quiz_count"] = len(quiz_submissions)
-			student["avg_quiz_score"] = (
-				round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
-				if quiz_submissions
-				else 0
-			)
-			student["assignment_scores"] = assignment_submissions
-			student["assignment_count"] = len(assignment_submissions)
-			passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
-			student["assignments_passed"] = passed_assignments
-			student["assignments_total"] = len(assignment_submissions)
+	# 		student["quiz_scores"] = quiz_submissions
+	# 		student["quiz_count"] = len(quiz_submissions)
+	# 		student["avg_quiz_score"] = (
+	# 			round(sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions), 1)
+	# 			if quiz_submissions
+	# 			else 0
+	# 		)
+	# 		student["assignment_scores"] = assignment_submissions
+	# 		student["assignment_count"] = len(assignment_submissions)
+	# 		passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
+	# 		student["assignments_passed"] = passed_assignments
+	# 		student["assignments_total"] = len(assignment_submissions)
 
-			direct_students.append(student)
-			total_progress += student["avg_progress"]
-			student_count_for_avg += 1
-			seen_students.add(member)
+	# 		direct_students.append(student)
+	# 		total_progress += student["avg_progress"]
+	# 		student_count_for_avg += 1
+	# 		seen_students.add(member)
 
-		# Add virtual batch if there are direct students
-		if direct_students:
-			total_students += len(direct_students)
-			batches_data.append({
-				"name": "direct-enrollments",
-				"title": "Direct Course Enrollments",
-				"start_date": None,
-				"end_date": None,
-				"students": direct_students,
-			})
+	# 	# Add virtual batch if there are direct students
+	# 	if direct_students:
+	# 		total_students += len(direct_students)
+	# 		batches_data.append({
+	# 			"name": "direct-enrollments",
+	# 			"title": "Direct Course Enrollments",
+	# 			"start_date": None,
+	# 			"end_date": None,
+	# 			"students": direct_students,
+	# 		})
 
 	# Count pending quiz/assignment submissions
 	pending_evaluations = frappe.db.count(
