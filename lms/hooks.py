@@ -82,6 +82,7 @@ after_migrate = [
 
 permission_query_conditions = {
     "LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
+    "DocType": "lms.app_permissions.filter_importable_doctypes",
 }
 
 has_permission = {
@@ -158,7 +159,7 @@ fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
 #
 override_whitelisted_methods = {
     # "frappe.desk.search.get_names_for_mentions": "lms.lms.utils.get_names_for_mentions",
-    "frappe.apps.get_apps": "lms.boot.get_apps_override",
+    "frappe.desk.search.search_link": "lms.app_permissions.search_link_override",
 }
 #
 # each overriding function accepts a `data` argument;
