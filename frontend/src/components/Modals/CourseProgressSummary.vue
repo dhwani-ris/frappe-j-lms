@@ -71,7 +71,7 @@
 													</div>
 												</template>
 												<div>
-													{{ row[column.key].toString() }}
+													{{ column.key === 'progress' ? Math.min(parseFloat(row[column.key]) || 0, 100).toString() + '%' : row[column.key].toString() }}
 												</div>
 											</ListRowItem>
 										</template>
@@ -104,7 +104,7 @@
 							class="border rounded-md w-full"
 							:config="{
 								title: __('Average Progress %'),
-								value: chartDetails.data?.average_progress || 0,
+								value: Math.min(chartDetails.data?.average_progress || 0, 100),
 							}"
 						/>
 					</div>

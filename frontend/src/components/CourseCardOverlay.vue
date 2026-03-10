@@ -100,7 +100,7 @@
 					</template>
 				</Button>
 				<router-link
-					v-if="user?.data?.is_moderator || is_instructor()"
+					v-if="user?.data?.is_moderator || user?.data?.is_instructor || user?.data?.is_master_trainer || user?.data?.is_lms_hr"
 					:to="{
 						name: 'CourseForm',
 						params: {

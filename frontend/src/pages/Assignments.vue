@@ -4,7 +4,7 @@
 	>
 		<Breadcrumbs :items="breadcrumbs" />
 		<Button
-			v-if="!readOnlyMode"
+			v-if="!readOnlyMode && (user.data?.is_moderator || user.data?.is_instructor || user.data?.is_master_trainer || user.data?.is_lms_hr)"
 			variant="solid"
 			@click="
 				() => {
@@ -67,8 +67,8 @@
 				<div
 					v-for="row in assignments.data"
 					:key="row.name"
-					@click="!readOnlyMode && openAssignment(row.name)"
-					class="cursor-pointer"
+					@click="!readOnlyMode && (user.data?.is_moderator || user.data?.is_instructor || user.data?.is_master_trainer || user.data?.is_lms_hr) && openAssignment(row.name)"
+					:class="!readOnlyMode && (user.data?.is_moderator || user.data?.is_instructor || user.data?.is_master_trainer || user.data?.is_lms_hr) ? 'cursor-pointer' : 'cursor-default'"
 				>
 					<ListRow :row="row">
 						<template #default="{ column, item }">

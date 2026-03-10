@@ -150,17 +150,6 @@ const userDropdownOptions = computed(() => {
 					},
 				},
 				{
-					component: markRaw(Apps),
-					condition: () => {
-						let cookies = new URLSearchParams(
-							document.cookie.split('; ').join('&')
-						)
-						let system_user = cookies.get('system_user')
-						if (system_user === 'yes') return true
-						else return false
-					},
-				},
-				{
 					icon: Settings,
 					label: 'Settings',
 					onClick: () => {

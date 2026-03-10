@@ -38,7 +38,7 @@ export const sessionStore = defineStore('lms-session', () => {
 		onSuccess() {
 			userResource.reset()
 			user.value = null
-			window.location.reload()
+			window.location.href = '/login#login'
 		},
 	})
 

@@ -7,7 +7,7 @@
 				class="h-7"
 				:items="[
 					{ label: __('Home'), route: { name: 'Home' } },
-					{ label: __('Trainer Dashboard') },
+					{ label: __('Employee Dashboard') },
 				]"
 			/>
 			<div class="flex gap-2">
