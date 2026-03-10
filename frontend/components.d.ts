@@ -57,7 +57,6 @@ declare module 'vue' {
     CourseProgressSummary: typeof import('./src/components/Modals/CourseProgressSummary.vue')['default']
     CourseReviews: typeof import('./src/components/CourseReviews.vue')['default']
     CreateOutline: typeof import('./src/components/CreateOutline.vue')['default']
-    CustomDataImportList: typeof import('./src/components/CustomDataImportList.vue')['default']
     DateRange: typeof import('./src/components/Common/DateRange.vue')['default']
     DesktopLayout: typeof import('./src/components/DesktopLayout.vue')['default']
     DiscussionModal: typeof import('./src/components/Modals/DiscussionModal.vue')['default']

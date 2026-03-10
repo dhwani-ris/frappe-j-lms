@@ -322,7 +322,8 @@ def get_course_progress(course, member=None):
         },
     )
     precision = cint(frappe.db.get_default("float_precision")) or 3
-    return flt(((completed_lessons / lesson_count) * 100), precision)
+    progress = flt(((completed_lessons / lesson_count) * 100), precision)
+    return min(progress, 100)
 
 
 def is_instructor(course):

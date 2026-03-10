@@ -3,7 +3,7 @@
 		class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 	>
 		<Breadcrumbs :items="breadcrumbs" />
-		<div v-if="!readOnlyMode" class="flex items-center space-x-2">
+		<div v-if="!readOnlyMode.value" class="flex items-center space-x-2">
 			<Badge v-if="quizDetails.isDirty" theme="orange">
 				{{ __('Not Saved') }}
 			</Badge>
@@ -55,16 +55,19 @@
 						v-model="quizDetails.doc.title"
 						:label="__('Title')"
 						:required="true"
+						:disabled="readOnlyMode.value"
 					/>
 					<FormControl
 						type="number"
 						v-model="quizDetails.doc.max_attempts"
 						:label="__('Maximum Attempts')"
+						:disabled="readOnlyMode.value"
 					/>
 					<FormControl
 						type="number"
 						v-model="quizDetails.doc.duration"
 						:label="__('Duration (in minutes)')"
+						:disabled="readOnlyMode.value"
 					/>
 				</div>
 				<div class="space-y-5">
@@ -77,6 +80,7 @@
 						v-model="quizDetails.doc.passing_percentage"
 						:label="__('Passing Percentage')"
 						:required="true"
+						:disabled="readOnlyMode.value"
 					/>
 				</div>
 			</div>
@@ -91,11 +95,13 @@
 						v-model="quizDetails.doc.show_answers"
 						type="checkbox"
 						:label="__('Show Answers')"
+						:disabled="readOnlyMode.value"
 					/>
 					<FormControl
 						v-model="quizDetails.doc.show_submission_history"
 						type="checkbox"
 						:label="__('Show Submission History')"
+						:disabled="readOnlyMode.value"
 					/>
 				</div>
 				<div class="flex flex-col space-y-5">
@@ -103,11 +109,13 @@
 						v-model="quizDetails.doc.shuffle_questions"
 						type="checkbox"
 						:label="__('Shuffle Questions')"
+						:disabled="readOnlyMode.value"
 					/>
 					<FormControl
 						v-if="quizDetails.doc.shuffle_questions"
 						v-model="quizDetails.doc.limit_questions_to"
 						:label="__('Limit Questions To')"
+						:disabled="readOnlyMode.value"
 					/>
 				</div>
 				<div class="flex flex-col space-y-5">
@@ -115,11 +123,13 @@
 						v-model="quizDetails.doc.enable_negative_marking"
 						type="checkbox"
 						:label="__('Enable Negative Marking')"
+						:disabled="readOnlyMode.value"
 					/>
 					<FormControl
 						v-if="quizDetails.doc.enable_negative_marking"
 						v-model="quizDetails.doc.marks_to_cut"
 						:label="__('Marks to Deduct')"
+						:disabled="readOnlyMode.value"
 					/>
 				</div>
 			</div>
@@ -130,7 +140,7 @@
 				<div class="text-lg font-semibold text-ink-gray-9">
 					{{ __('Questions') }}
 				</div>
-				<Button v-if="!readOnlyMode" @click="openQuestionModal()">
+				<Button v-if="!readOnlyMode.value" @click="openQuestionModal()">
 					<template #prefix>
 						<Plus class="w-4 h-4" />
 					</template>
@@ -242,7 +252,9 @@ const currentQuestion = reactive({
 })
 const user = inject('$user')
 const router = useRouter()
-const readOnlyMode = window.read_only_mode
+const readOnlyMode = computed(() => {
+	return window.read_only_mode || (user.data?.is_trainer && !user.data?.is_master_trainer && !user.data?.is_lms_hr)
+})
 
 const props = defineProps({
 	quizID: {
