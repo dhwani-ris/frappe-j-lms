@@ -570,7 +570,7 @@ const getSidebarItems = () => {
 			hideLabel: false,
 			items: [
 				{
-					label: 'Trainer Dashboard',
+					label: 'Employee Dashboard',
 					icon: 'GraduationCap',
 					to: 'TrainerDashboard',
 					activeFor: ['TrainerDashboard'],
