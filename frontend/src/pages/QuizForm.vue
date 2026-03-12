@@ -3,26 +3,7 @@
 		class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 	>
 		<Breadcrumbs :items="breadcrumbs" />
-		<div v-if="!readOnlyMode.value" class="flex items-center space-x-2">
-			<Badge v-if="quizDetails.isDirty" theme="orange">
-				{{ __('Not Saved') }}
-			</Badge>
-			<router-link
-				v-if="quizDetails.doc?.name"
-				:to="{
-					name: 'QuizPage',
-					params: {
-						quizID: quizDetails.doc.name,
-					},
-				}"
-			>
-				<Button>
-					<template #prefix>
-						<ListChecks class="size-4 stroke-1.5" />
-					</template>
-					{{ __('Test Quiz') }}
-				</Button>
-			</router-link>
+		<div class="flex items-center space-x-2">
 			<router-link
 				v-if="quizDetails.doc?.name"
 				:to="{
@@ -39,9 +20,30 @@
 					{{ __('Check Submissions') }}
 				</Button>
 			</router-link>
-			<Button variant="solid" @click="submitQuiz()">
-				{{ __('Save') }}
-			</Button>
+			<template v-if="!readOnlyMode">
+				<Badge v-if="quizDetails.isDirty" theme="orange">
+					{{ __('Not Saved') }}
+				</Badge>
+				<router-link
+					v-if="quizDetails.doc?.name"
+					:to="{
+						name: 'QuizPage',
+						params: {
+							quizID: quizDetails.doc.name,
+						},
+					}"
+				>
+					<Button>
+						<template #prefix>
+							<ListChecks class="size-4 stroke-1.5" />
+						</template>
+						{{ __('Test Quiz') }}
+					</Button>
+				</router-link>
+				<Button variant="solid" @click="submitQuiz()">
+					{{ __('Save') }}
+				</Button>
+			</template>
 		</div>
 	</header>
 	<div v-if="quizDetails.doc" class="py-5">
@@ -55,19 +57,19 @@
 						v-model="quizDetails.doc.title"
 						:label="__('Title')"
 						:required="true"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						type="number"
 						v-model="quizDetails.doc.max_attempts"
 						:label="__('Maximum Attempts')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						type="number"
 						v-model="quizDetails.doc.duration"
 						:label="__('Duration (in minutes)')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 				</div>
 				<div class="space-y-5">
@@ -80,7 +82,7 @@
 						v-model="quizDetails.doc.passing_percentage"
 						:label="__('Passing Percentage')"
 						:required="true"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 				</div>
 			</div>
@@ -95,13 +97,12 @@
 						v-model="quizDetails.doc.show_answers"
 						type="checkbox"
 						:label="__('Show Answers')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						v-model="quizDetails.doc.show_submission_history"
 						type="checkbox"
 						:label="__('Show Submission History')"
-						:disabled="readOnlyMode.value"
 					/>
 				</div>
 				<div class="flex flex-col space-y-5">
@@ -109,13 +110,13 @@
 						v-model="quizDetails.doc.shuffle_questions"
 						type="checkbox"
 						:label="__('Shuffle Questions')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						v-if="quizDetails.doc.shuffle_questions"
 						v-model="quizDetails.doc.limit_questions_to"
 						:label="__('Limit Questions To')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 				</div>
 				<div class="flex flex-col space-y-5">
@@ -123,13 +124,13 @@
 						v-model="quizDetails.doc.enable_negative_marking"
 						type="checkbox"
 						:label="__('Enable Negative Marking')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						v-if="quizDetails.doc.enable_negative_marking"
 						v-model="quizDetails.doc.marks_to_cut"
 						:label="__('Marks to Deduct')"
-						:disabled="readOnlyMode.value"
+						:disabled="readOnlyMode"
 					/>
 				</div>
 			</div>
@@ -140,7 +141,7 @@
 				<div class="text-lg font-semibold text-ink-gray-9">
 					{{ __('Questions') }}
 				</div>
-				<Button v-if="!readOnlyMode.value" @click="openQuestionModal()">
+				<Button v-if="!readOnlyMode" @click="openQuestionModal()">
 					<template #prefix>
 						<Plus class="w-4 h-4" />
 					</template>
@@ -253,7 +254,18 @@ const currentQuestion = reactive({
 const user = inject('$user')
 const router = useRouter()
 const readOnlyMode = computed(() => {
-	return window.read_only_mode || (user.data?.is_trainer && !user.data?.is_master_trainer && !user.data?.is_lms_hr)
+	if (window.read_only_mode) return true
+
+	// Check if user has privileged roles
+	const roles = user.data?.roles || []
+	const hasPrivilegedRole = roles.some(role =>
+		['LMS Master Trainer', 'LMS HR', 'System Manager', 'HR Manager'].includes(role)
+	)
+
+	// Read-only if: user is LMS Trainer AND doesn't have privileged roles
+	const isTrainer = roles.includes('LMS Trainer')
+
+	return isTrainer && !hasPrivilegedRole
 })
 
 const props = defineProps({

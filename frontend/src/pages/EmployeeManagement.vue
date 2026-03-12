@@ -296,9 +296,18 @@
 					</div>
 				<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label class="block text-sm font-medium text-ink-gray-7 mb-1">
-								{{ __('Department') }}
-							</label>
+							<div class="flex items-center justify-between mb-1">
+								<label class="block text-sm font-medium text-ink-gray-7">
+									{{ __('Department') }}
+								</label>
+								<Button
+									variant="ghost"
+									size="sm"
+									@click="showDeptModal = true"
+								>
+									{{ __('Manage') }}
+								</Button>
+							</div>
 							<Autocomplete
 								v-if="filters.data"
 								v-model="newEmployee.department"
@@ -307,9 +316,18 @@
 							/>
 						</div>
 						<div>
-							<label class="block text-sm font-medium text-ink-gray-7 mb-1">
-								{{ __('Designation') }}
-							</label>
+							<div class="flex items-center justify-between mb-1">
+								<label class="block text-sm font-medium text-ink-gray-7">
+									{{ __('Designation') }}
+								</label>
+								<Button
+									variant="ghost"
+									size="sm"
+									@click="showDesigModal = true"
+								>
+									{{ __('Manage') }}
+								</Button>
+							</div>
 							<Autocomplete
 								v-if="filters.data"
 								v-model="newEmployee.designation"
@@ -483,6 +501,129 @@
 				</Button>
 			</template>
 		</Dialog>
+
+		<!-- Manage Departments Modal -->
+		<Dialog
+			v-model="showDeptModal"
+			:options="{ title: __('Manage Departments'), size: 'md' }"
+		>
+			<template #body-content>
+				<div class="space-y-4">
+					<div>
+						<label class="block text-sm font-medium text-ink-gray-7 mb-2">
+							{{ __('Add New Department') }}
+						</label>
+						<div class="flex gap-2">
+							<FormControl
+								v-model="newDeptName"
+								type="text"
+								:placeholder="__('Department name')"
+								@keyup.enter="addDepartment"
+							/>
+							<Button variant="solid" @click="addDepartment">
+								{{ __('Add') }}
+			</Button>
+						</div>
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-ink-gray-7 mb-2">
+							{{ __('Existing Departments') }}
+						</label>
+						<div class="max-h-60 overflow-y-auto space-y-1">
+							<div
+								v-for="dept in filters.data?.departments || []"
+								:key="dept"
+								class="flex items-center justify-between p-2 hover:bg-surface-gray-1 rounded"
+							>
+								<span class="text-ink-gray-7">{{ dept }}</span>
+								<Button
+									variant="ghost"
+									size="sm"
+									@click="deleteDepartment(dept)"
+								>
+									<template #prefix>
+										<X class="size-4" />
+									</template>
+								</Button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</template>
+		</Dialog>
+
+		<!-- Manage Designations Modal -->
+		<Dialog
+			v-model="showDesigModal"
+			:options="{ title: __('Manage Designations'), size: 'md' }"
+		>
+			<template #body-content>
+				<div class="space-y-4">
+					<div>
+						<label class="block text-sm font-medium text-ink-gray-7 mb-2">
+							{{ __('Add New Designation') }}
+						</label>
+						<div class="flex gap-2">
+							<FormControl
+								v-model="newDesigName"
+								type="text"
+								:placeholder="__('Designation name')"
+								@keyup.enter="addDesignation"
+							/>
+							<Button variant="solid" @click="addDesignation">
+								{{ __('Add') }}
+							</Button>
+						</div>
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-ink-gray-7 mb-2">
+							{{ __('Existing Designations') }}
+						</label>
+						<div class="max-h-60 overflow-y-auto space-y-1">
+							<div
+								v-for="desig in filters.data?.designations || []"
+								:key="desig"
+								class="flex items-center justify-between p-2 hover:bg-surface-gray-1 rounded"
+							>
+								<span class="text-ink-gray-7">{{ desig }}</span>
+								<Button
+									variant="ghost"
+									size="sm"
+									@click="deleteDesignation(desig)"
+								>
+									<template #prefix>
+										<X class="size-4" />
+									</template>
+								</Button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</template>
+		</Dialog>
+
+		<!-- Delete Confirmation Modal -->
+		<Dialog
+			v-model="showDeleteConfirm"
+			:options="{ title: __('Confirm Deletion'), size: 'sm' }"
+		>
+			<template #body-content>
+				<p class="text-ink-gray-7">
+					{{ __('Are you sure you want to delete this {0}?').format(deleteTarget.type) }}
+				</p>
+				<p class="font-medium text-ink-gray-9 mt-2">{{ deleteTarget.name }}</p>
+			</template>
+			<template #actions>
+				<div class="flex gap-2">
+					<Button variant="subtle" @click="showDeleteConfirm = false">
+						{{ __('Cancel') }}
+					</Button>
+					<Button variant="solid" theme="red" @click="confirmDelete">
+						{{ __('Delete') }}
+					</Button>
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -497,8 +638,9 @@ import {
 	Dialog,
 	createResource,
 	toast,
+	call,
 } from 'frappe-ui'
-import { Search, Users as UsersIcon, Plus, Upload, Download } from 'lucide-vue-next'
+import { Search, Users as UsersIcon, Plus, Upload, Download, X } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { ref, computed, reactive } from 'vue'
 
@@ -510,6 +652,12 @@ const pageSize = 20
 const showRoleModal = ref(false)
 const selectedEmployee = ref(null)
 const selectedRoleProfile = ref('')
+const showDeptModal = ref(false)
+const showDesigModal = ref(false)
+const newDeptName = ref('')
+const newDesigName = ref('')
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref({ type: '', name: '' })
 
 let searchTimeout = null
 const debouncedSearch = () => {
@@ -779,6 +927,79 @@ const processBulkUpload = async () => {
 		}
 	} catch (err) {
 		toast.error(__('Failed to upload employees'))
+	}
+}
+
+// Department Management
+const addDepartment = async () => {
+	if (!newDeptName.value.trim()) return
+
+	try {
+		await call('frappe.client.insert', {
+			doc: {
+				doctype: 'Department',
+				department_name: newDeptName.value.trim(),
+			},
+		})
+
+		toast.success(__('Department added successfully'))
+		newDeptName.value = ''
+		filters.reload()
+	} catch (err) {
+		console.error('Error adding department:', err)
+		toast.error(__('Failed to add department: ' + (err.message || err)))
+	}
+}
+
+const deleteDepartment = (deptName) => {
+	deleteTarget.value = { type: 'department', name: deptName }
+	showDeleteConfirm.value = true
+}
+
+// Designation Management
+const addDesignation = async () => {
+	if (!newDesigName.value.trim()) return
+
+	try {
+		await call('frappe.client.insert', {
+			doc: {
+				doctype: 'Designation',
+				designation_name: newDesigName.value.trim(),
+			},
+		})
+
+		toast.success(__('Designation added successfully'))
+		newDesigName.value = ''
+		filters.reload()
+	} catch (err) {
+		console.error('Error adding designation:', err)
+		toast.error(__('Failed to add designation: ' + (err.message || err)))
+	}
+}
+
+const deleteDesignation = (desigName) => {
+	deleteTarget.value = { type: 'designation', name: desigName }
+	showDeleteConfirm.value = true
+}
+
+// Confirm Delete Handler
+const confirmDelete = async () => {
+	const doctype = deleteTarget.value.type === 'department' ? 'Department' : 'Designation'
+	const name = deleteTarget.value.name
+
+	try {
+		await call('frappe.client.delete', {
+			doctype: doctype,
+			name: name,
+		})
+
+		toast.success(__(`${deleteTarget.value.type.charAt(0).toUpperCase() + deleteTarget.value.type.slice(1)} deleted successfully`))
+		showDeleteConfirm.value = false
+		filters.reload()
+	} catch (err) {
+		console.error('Error deleting:', err)
+		toast.error(__(`Failed to delete ${deleteTarget.value.type}. It may be in use.`))
+		showDeleteConfirm.value = false
 	}
 }
 </script>
