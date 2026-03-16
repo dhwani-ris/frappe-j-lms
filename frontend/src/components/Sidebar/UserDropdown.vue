@@ -172,6 +172,16 @@ const userDropdownOptions = computed(() => {
 					},
 				},
 				{
+					label: 'Desk',
+					icon: Zap,
+					onClick: () => {
+						window.location.href = '/app'
+					},
+					condition: () => {
+						return userResource.data?.is_system_manager
+					},
+				},
+				{
 					icon: FrappeCloudIcon,
 					label: 'Login to Frappe Cloud',
 					onClick: () => {
