@@ -19,6 +19,7 @@
 						v-model="assignment.title"
 						:label="__('Title')"
 						:required="true"
+						:disabled="readOnlyMode"
 					/>
 					<FormControl
 						v-model="assignment.type"
@@ -26,12 +27,14 @@
 						:options="assignmentOptions"
 						:label="__('Submission Type')"
 						:required="true"
+						:disabled="readOnlyMode"
 					/>
 					<Link
 						v-model="assignment.course"
 						:label="__('Course')"
 						doctype="LMS Course"
 						placeholder=" "
+						:disabled="readOnlyMode"
 					/>
 					<div>
 						<div class="text-xs text-ink-gray-5 mb-2">
@@ -41,7 +44,7 @@
 						<TextEditor
 							:content="assignment.question"
 							@change="(val) => (assignment.question = val)"
-							:editable="true"
+							:editable="!readOnlyMode"
 							:fixedMenu="true"
 							editorClass="prose-sm max-w-none border-b border-x bg-surface-gray-2 rounded-b-md py-1 px-2 min-h-[7rem] max-h-[18rem] overflow-y-auto"
 						/>
@@ -61,7 +64,7 @@
 							{{ __('Check Submissions') }}
 						</Button>
 					</router-link>
-					<Button variant="solid" @click="saveAssignment">
+					<Button v-if="!readOnlyMode" variant="solid" @click="saveAssignment">
 						{{ __('Save') }}
 					</Button>
 				</div>
@@ -71,12 +74,28 @@
 </template>
 <script setup lang="ts">
 import { Button, Dialog, FormControl, TextEditor, toast } from 'frappe-ui'
-import { computed, reactive, watch } from 'vue'
+import { computed, inject, reactive, watch } from 'vue'
 import { escapeHTML, sanitizeHTML } from '@/utils'
 import { Link } from 'frappe-ui/frappe'
 
 const show = defineModel()
 const assignments = defineModel<Assignments>('assignments')
+const user = inject('$user')
+
+const readOnlyMode = computed(() => {
+	if (window.read_only_mode) return true
+
+	// Check if user has privileged roles
+	const roles = user.data?.roles || []
+	const hasPrivilegedRole = roles.some(role =>
+		['LMS Master Trainer', 'LMS HR', 'System Manager', 'HR Manager'].includes(role)
+	)
+
+	// Read-only if: user is LMS Trainer AND doesn't have privileged roles
+	const isTrainer = roles.includes('LMS Trainer')
+
+	return isTrainer && !hasPrivilegedRole
+})
 
 interface Assignment {
 	title: string

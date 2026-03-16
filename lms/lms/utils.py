@@ -1173,6 +1173,10 @@ def get_course_outline(course, progress=False):
     enable_sequential = frappe.db.get_value("LMS Course", course, "enable_sequential_learning")
     all_previous_chapters_complete = True  # First chapter is always unlocked
 
+    # Check if user has privileged roles that bypass sequential learning locks
+    user_roles = frappe.get_roles(frappe.session.user)
+    is_privileged_user = any(role in user_roles for role in ["LMS Master Trainer", "LMS HR", "System Manager"])
+
     for chapter_idx, chapter in enumerate(chapters):
         chapter_details = frappe.db.get_value(
             "Course Chapter",
@@ -1194,7 +1198,8 @@ def get_course_outline(course, progress=False):
             )
 
         # Sequential learning logic
-        if enable_sequential and frappe.session.user != "Guest":
+        # Privileged users (Master Trainer, HR, System Manager) can access all chapters
+        if enable_sequential and frappe.session.user != "Guest" and not is_privileged_user:
             # Lock this chapter if any previous chapter is incomplete
             chapter_details["is_locked"] = not all_previous_chapters_complete
 
