@@ -24,34 +24,11 @@ def check_app_permission_for_insights():
 
 def filter_importable_doctypes(user):
 	"""Filter DocTypes in Data Import dropdown to show only LMS, Employee, and User doctypes"""
-	# Always filter to LMS-related DocTypes + User + Employee for all contexts
-	# This is acceptable since we only use DocType queries in data import context in LMS app
-	allowed_doctypes = [
-		"User",
-		"Employee",
-		# LMS DocTypes
-		"LMS Course",
-		"LMS Batch",
-		"LMS Batch Enrollment",
-		"LMS Enrollment",
-		"LMS Quiz",
-		"LMS Quiz Question",
-		"LMS Quiz Submission",
-		"LMS Assignment",
-		"LMS Assignment Submission",
-		"LMS Certificate",
-		"LMS Certificate Evaluation",
-		"LMS Certificate Request",
-		"LMS Chapter",
-		"LMS Class",
-		"LMS Course Mentor Mapping",
-		"LMS Course Progress",
-		"LMS Exercise",
-		"LMS Live Class",
-		"LMS Message",
-		"LMS Student Progress Alert",
-		"LMS Payment",
-	]
+	# Get all DocTypes from LMS module dynamically
+	lms_doctypes = frappe.get_all("DocType", filters={"module": "LMS"}, pluck="name")
+
+	# Add User and Employee
+	allowed_doctypes = ["User", "Employee"] + lms_doctypes
 
 	return f"`tabDocType`.name in ({', '.join(repr(dt) for dt in allowed_doctypes)})"
 
@@ -85,32 +62,11 @@ def search_link_override(
 
 	# If searching for DocType with allow_import filter, apply our custom filter
 	if doctype == "DocType" and parsed_filters and isinstance(parsed_filters, dict) and parsed_filters.get("allow_import") == 1:
-		# Add our allowed DocTypes filter
-		allowed_doctypes = [
-			"User",
-			"Employee",
-			"LMS Course",
-			"LMS Batch",
-			"LMS Batch Enrollment",
-			"LMS Enrollment",
-			"LMS Quiz",
-			"LMS Quiz Question",
-			"LMS Quiz Submission",
-			"LMS Assignment",
-			"LMS Assignment Submission",
-			"LMS Certificate",
-			"LMS Certificate Evaluation",
-			"LMS Certificate Request",
-			"LMS Chapter",
-			"LMS Class",
-			"LMS Course Mentor Mapping",
-			"LMS Course Progress",
-			"LMS Exercise",
-			"LMS Live Class",
-			"LMS Message",
-			"LMS Student Progress Alert",
-			"LMS Payment",
-		]
+		# Get all DocTypes from LMS module dynamically
+		lms_doctypes = frappe.get_all("DocType", filters={"module": "LMS"}, pluck="name")
+
+		# Add User and Employee to LMS doctypes
+		allowed_doctypes = ["User", "Employee"] + lms_doctypes
 
 		# Add the name filter to restrict to allowed doctypes
 		parsed_filters["name"] = ["in", allowed_doctypes]
