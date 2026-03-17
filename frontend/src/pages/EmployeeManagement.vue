@@ -243,7 +243,7 @@
 					</div>
 					<div>
 						<label class="block text-sm font-medium text-ink-gray-7 mb-1">
-							{{ __('Email') }}
+							{{ __('Email') }} *
 						</label>
 						<FormControl
 							v-model="newEmployee.user_email"
@@ -807,7 +807,7 @@ const createEmployee = createResource({
 })
 
 const addEmployee = async () => {
-	if (!newEmployee.employee_name || !newEmployee.gender || !newEmployee.date_of_birth) return
+	if (!newEmployee.employee_name || !newEmployee.user_email || !newEmployee.gender || !newEmployee.date_of_birth) return
 
 	try {
 		await createEmployee.submit({
