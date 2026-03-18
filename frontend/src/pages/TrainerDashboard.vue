@@ -438,10 +438,12 @@ const dashboard = createResource({
 // Computed: Batch options from data
 const batchOptions = computed(() => {
 	if (!dashboard.data?.batches) return []
-	const batches = dashboard.data.batches.map(b => b.title).filter(Boolean)
 	return [
 		{ label: __('All Batches'), value: '' },
-		...batches.map(b => ({ label: b, value: b }))
+		...dashboard.data.batches.map(b => ({
+			label: b.title,
+			value: b.name  // Use batch ID instead of title
+		}))
 	]
 })
 
@@ -532,6 +534,7 @@ const lockedChapters = createResource({
 	makeParams(values) {
 		return {
 			employee: values.employee,
+			batch: values.batch,
 		}
 	},
 })
@@ -553,9 +556,10 @@ const openUnlockChapterModal = (student) => {
 	selectedChapterToUnlock.value = ''
 	showUnlockChapterModal.value = true
 
-	// Fetch locked chapters for this student
+	// Fetch locked chapters for this student in their batch
 	lockedChapters.submit({
 		employee: student.member,
+		batch: student.batch_name,
 	})
 }
 
