@@ -1200,8 +1200,22 @@ def get_course_outline(course, progress=False):
         # Sequential learning logic
         # Privileged users (Master Trainer, HR, System Manager) can access all chapters
         if enable_sequential and frappe.session.user != "Guest" and not is_privileged_user:
-            # Lock this chapter if any previous chapter is incomplete
-            chapter_details["is_locked"] = not all_previous_chapters_complete
+            # Check if this chapter has been manually unlocked
+            progress_record = frappe.db.get_value(
+                "LMS Course Progress",
+                {"member": frappe.session.user, "course": course, "chapter": chapter.chapter},
+                ["manually_unlocked"],
+                as_dict=True,
+            )
+
+            if progress_record and progress_record.manually_unlocked:
+                # This chapter has been manually unlocked - allow access
+                chapter_details["is_locked"] = False
+                chapter_details["manually_unlocked"] = True
+            else:
+                # Lock this chapter if any previous chapter is incomplete
+                chapter_details["is_locked"] = not all_previous_chapters_complete
+                chapter_details["manually_unlocked"] = False
 
             # Check if current chapter is complete
             if not chapter_details.is_scorm_package:
@@ -1209,11 +1223,12 @@ def get_course_outline(course, progress=False):
             else:
                 chapter_complete = is_scorm_chapter_complete(course, chapter.chapter)
 
-            # If this chapter is not complete, all subsequent chapters should be locked
-            if not chapter_complete:
+            # If this chapter is not complete AND not manually unlocked, lock subsequent chapters
+            if not chapter_complete and not (progress_record and progress_record.manually_unlocked):
                 all_previous_chapters_complete = False
         else:
             chapter_details["is_locked"] = False
+            chapter_details["manually_unlocked"] = False
 
         outline.append(chapter_details)
     return outline

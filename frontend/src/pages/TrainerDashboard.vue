@@ -138,6 +138,7 @@
 							<th class="px-4 py-3">{{ __('Avg Progress') }}</th>
 							<th class="px-4 py-3 text-center">{{ __('Assessments') }}</th>
 							<th class="px-4 py-3 text-center">{{ __('Status') }}</th>
+							<th class="px-4 py-3 text-center" v-if="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr">{{ __('Actions') }}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -220,10 +221,20 @@
 										:theme="getStatusTheme(student.status)"
 									/>
 								</td>
+								<td class="px-4 py-3 text-center" v-if="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr">
+									<Button
+										variant="subtle"
+										theme="blue"
+										size="sm"
+										@click.stop="openUnlockChapterModal(student)"
+									>
+										{{ __('Unlock Chapter') }}
+									</Button>
+								</td>
 							</tr>
 							<!-- Expanded: Course Details -->
 							<tr v-if="expandedStudent === student.member && student.enrollments?.length">
-								<td colspan="7" class="p-0">
+								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
 									<div class="bg-surface-gray-1">
 										<div
 											v-for="enrollment in student.enrollments"
@@ -257,7 +268,7 @@
 								</td>
 							</tr>
 							<tr v-if="expandedStudent === student.member && !student.enrollments?.length">
-								<td colspan="7" class="p-0">
+								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
 									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
 										{{ __('No course enrollments') }}
 									</div>
@@ -303,6 +314,52 @@
 			</div>
 		</div>
 
+		<!-- Unlock Chapter Modal -->
+		<Dialog
+			v-model="showUnlockChapterModal"
+			:options="{ title: __('Unlock Chapter') }"
+		>
+			<template #body-content>
+				<div class="space-y-4">
+					<div class="text-sm text-gray-700">
+						{{ __('Select a chapter to unlock for') }}
+						<strong>{{ selectedStudentForUnlock?.member_name }}</strong>
+					</div>
+
+					<!-- Chapter Selection -->
+					<div v-if="lockedChapters.loading" class="text-sm text-gray-500 py-4 text-center">
+						{{ __('Loading...') }}
+					</div>
+					<div v-else-if="!lockedChapters.data?.length" class="text-sm text-gray-500 py-4 text-center">
+						{{ __('No locked chapters available to unlock') }}
+					</div>
+					<FormControl
+						v-else
+						v-model="selectedChapterToUnlock"
+						type="select"
+						:options="chapterOptions"
+						:placeholder="__('Select Chapter')"
+					/>
+				</div>
+			</template>
+			<template #actions>
+				<div class="flex space-x-2">
+					<Button variant="subtle" @click="showUnlockChapterModal = false">
+						{{ __('Cancel') }}
+					</Button>
+					<Button
+						variant="solid"
+						theme="blue"
+						:loading="doUnlockChapter.loading"
+						:disabled="!selectedChapterToUnlock"
+						@click="handleUnlockChapter"
+					>
+						{{ __('Unlock') }}
+					</Button>
+				</div>
+			</template>
+		</Dialog>
+
 		<!-- Quiz Analytics Modal -->
 		<QuizAnalyticsModal
 			v-model="showQuizModal"
@@ -312,15 +369,16 @@
 </template>
 
 <script setup>
-import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, FormControl } from 'frappe-ui'
+import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, FormControl, Dialog, toast } from 'frappe-ui'
 import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3 } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import dayjs from 'dayjs'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const user = inject('$user')
 const expandedStudent = ref(null)
 const searchQuery = ref('')
 const batchFilter = ref('')
@@ -329,6 +387,9 @@ const currentPage = ref(1)
 const perPage = ref(25)
 const showQuizModal = ref(false)
 const selectedStudent = ref(null)
+const showUnlockChapterModal = ref(false)
+const selectedStudentForUnlock = ref(null)
+const selectedChapterToUnlock = ref('')
 
 const perPageOptions = [
 	{ label: '10', value: 10 },
@@ -463,5 +524,63 @@ const getAssessmentSummary = (student) => {
 		parts.push(`${student.assignment_count} assignment${student.assignment_count > 1 ? 's' : ''}`)
 	}
 	return parts.length ? parts.join(', ') : __('No assessments')
+}
+
+// ─── Unlock Chapter ──────────────────────────────────────────────────────────
+const lockedChapters = createResource({
+	url: 'lms.lms.custom.dashboard_api.get_locked_chapters_for_employee',
+	makeParams(values) {
+		return {
+			employee: values.employee,
+		}
+	},
+})
+
+const doUnlockChapter = createResource({
+	url: 'lms.lms.custom.dashboard_api.unlock_chapter_for_employee',
+})
+
+const chapterOptions = computed(() => {
+	if (!lockedChapters.data) return []
+	return lockedChapters.data.map(chapter => ({
+		label: chapter.display,
+		value: JSON.stringify({ course: chapter.course, chapter: chapter.chapter })
+	}))
+})
+
+const openUnlockChapterModal = (student) => {
+	selectedStudentForUnlock.value = student
+	selectedChapterToUnlock.value = ''
+	showUnlockChapterModal.value = true
+
+	// Fetch locked chapters for this student
+	lockedChapters.submit({
+		employee: student.member,
+	})
+}
+
+const handleUnlockChapter = async () => {
+	if (!selectedChapterToUnlock.value) {
+		toast.error(__('Please select a chapter to unlock'))
+		return
+	}
+
+	try {
+		const { course, chapter } = JSON.parse(selectedChapterToUnlock.value)
+
+		await doUnlockChapter.submit({
+			employee: selectedStudentForUnlock.value.member,
+			course: course,
+			chapter: chapter,
+		})
+		toast.success(
+			doUnlockChapter.data?.message || __('Chapter unlocked successfully')
+		)
+		showUnlockChapterModal.value = false
+		selectedChapterToUnlock.value = ''
+		dashboard.reload()
+	} catch (err) {
+		toast.error(err.messages?.[0] || __('Failed to unlock chapter'))
+	}
 }
 </script>

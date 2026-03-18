@@ -177,7 +177,7 @@ def get_trainer_dashboard():
     total_progress = 0
     student_count_for_avg = 0
     pending_evaluations = 0
-    seen_students = set()  # Track students we've already counted
+    seen_students = set()  # Track unique students for stats only
 
     # Process batches
     for batch_name in batch_names:
@@ -192,6 +192,14 @@ def get_trainer_dashboard():
             as_dict=True,
         )
 
+        # Get courses assigned to this batch
+        batch_courses = frappe.get_all(
+            "Batch Course",
+            {"parent": batch_name},
+            ["course"],
+            pluck="course"
+        )
+
         students = frappe.get_all(
             "LMS Batch Enrollment",
             {"batch": batch_name},
@@ -199,33 +207,72 @@ def get_trainer_dashboard():
         )
 
         for student in students:
-            enrollments = frappe.get_all(
-                "LMS Enrollment",
-                {"member": student.member},
-                ["course", "progress"],
-            )
+            # Get only enrollments for courses in this batch
+            if batch_courses:
+                enrollments = frappe.get_all(
+                    "LMS Enrollment",
+                    {"member": student.member, "course": ["in", batch_courses]},
+                    ["course", "progress"],
+                )
+            else:
+                # If no specific courses, show all enrollments
+                enrollments = frappe.get_all(
+                    "LMS Enrollment",
+                    {"member": student.member},
+                    ["course", "progress"],
+                )
+
             for e in enrollments:
                 e.course_title = frappe.db.get_value("LMS Course", e.course, "title")
                 e.status = calculate_status(cint(e.progress))
 
-            # Get quiz scores - show all
-            quiz_submissions = frappe.get_all(
-                "LMS Quiz Submission",
-                {"member": student.member},
-                ["quiz", "score", "percentage", "creation"],
-                order_by="creation desc",
-            )
+            # Get quiz submissions only for courses in this batch
+            if batch_courses:
+                # Get all quizzes for courses in this batch
+                batch_course_quizzes = frappe.get_all(
+                    "LMS Quiz",
+                    {"course": ["in", batch_courses]},
+                    pluck="name"
+                )
+
+                # Get quiz scores - only for quizzes in this batch's courses
+                if batch_course_quizzes:
+                    quiz_submissions = frappe.get_all(
+                        "LMS Quiz Submission",
+                        {"member": student.member, "quiz": ["in", batch_course_quizzes]},
+                        ["quiz", "score", "percentage", "creation"],
+                        order_by="creation desc",
+                    )
+                else:
+                    quiz_submissions = []
+            else:
+                # No specific courses in batch - show all quiz submissions
+                quiz_submissions = frappe.get_all(
+                    "LMS Quiz Submission",
+                    {"member": student.member},
+                    ["quiz", "score", "percentage", "creation"],
+                    order_by="creation desc",
+                )
+
             for quiz_sub in quiz_submissions:
                 quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
                 quiz_sub.quiz_title = quiz_title
 
-            # Get assignment scores - show all
-            assignment_submissions = frappe.get_all(
-                "LMS Assignment Submission",
-                {"member": student.member},
-                ["assignment", "status", "assignment_title", "modified"],
-                order_by="modified desc",
-            )
+            # Get assignment submissions only for courses in this batch
+            if batch_courses:
+                assignment_submissions = frappe.get_all(
+                    "LMS Assignment Submission",
+                    {"member": student.member, "course": ["in", batch_courses]},
+                    ["assignment", "status", "assignment_title", "modified"],
+                    order_by="modified desc",
+                )
+            else:
+                assignment_submissions = frappe.get_all(
+                    "LMS Assignment Submission",
+                    {"member": student.member},
+                    ["assignment", "status", "assignment_title", "modified"],
+                    order_by="modified desc",
+                )
 
             student.enrollments = enrollments
             student.avg_progress = (
@@ -257,6 +304,11 @@ def get_trainer_dashboard():
             student.assignments_passed = passed_assignments
             student.assignments_total = len(assignment_submissions)
 
+            # Store batch info for this student
+            student.batch = batch.title  # Store batch name
+            student.batch_name = batch_name  # Store batch ID
+
+            # Track unique students for summary stats only
             if student.member not in seen_students:
                 total_progress += student.avg_progress
                 student_count_for_avg += 1
@@ -373,7 +425,7 @@ def get_trainer_dashboard():
     return {
         "batches": batches_data,
         "summary": {
-            "total_students": total_students,
+            "total_students": len(seen_students),  # Use unique student count
             "avg_progress": (
                 round(total_progress / student_count_for_avg, 1)
                 if student_count_for_avg
@@ -1383,4 +1435,197 @@ def get_quiz_analytics(quiz_id):
         "score_distribution": score_ranges,
         "submissions": submissions,
         "question_performance": question_performance,
+    }
+
+
+@frappe.whitelist()
+def get_locked_chapters_for_employee(employee):
+    """Get list of ALL locked chapters for an employee across ALL enrolled courses
+
+    Args:
+        employee: Employee ID or user email
+    """
+    frappe.only_for(["LMS Master Trainer", "LMS HR", "System Manager"])
+
+    # Check if employee is an email (user) or Employee ID
+    if "@" in employee:
+        # It's a user email
+        user_id = employee
+    else:
+        # It's an Employee ID - get user_id
+        user_id = frappe.db.get_value("Employee", employee, "user_id")
+        if not user_id:
+            frappe.throw("Employee has no linked user account")
+
+    # Get all enrollments for this user
+    enrollments = frappe.get_all(
+        "LMS Enrollment",
+        filters={"member": user_id},
+        fields=["course"],
+        pluck="course"
+    )
+
+    if not enrollments:
+        return []
+
+    all_locked_chapters = []
+
+    # For each enrolled course, get locked chapters
+    for course in enrollments:
+        # Get course details
+        course_doc = frappe.get_doc("LMS Course", course)
+
+        if not course_doc.enable_sequential_learning:
+            continue  # Skip courses without sequential learning
+
+        # Get course title
+        course_title = course_doc.title
+
+        # Get all chapters in order
+        chapters = frappe.get_all(
+            "Course Chapter",
+            filters={"course": course},
+            fields=["name", "title", "idx"],
+            order_by="idx asc",
+        )
+
+        all_previous_complete = True
+
+        for chapter in chapters:
+            chapter_name = chapter.name
+
+            # Check if chapter is already manually unlocked
+            progress = frappe.db.get_value(
+                "LMS Course Progress",
+                {"member": user_id, "course": course, "chapter": chapter_name},
+                ["manually_unlocked", "status"],
+                as_dict=True,
+            )
+
+            if progress and progress.manually_unlocked:
+                # Already manually unlocked - skip
+                continue
+
+            # Check if chapter is complete FOR THIS SPECIFIC USER (not current session user)
+            # Get lessons in this chapter
+            lessons = frappe.get_all(
+                "Lesson Reference",
+                filters={"parent": chapter_name},
+                fields=["lesson"],
+                pluck="lesson"
+            )
+
+            # Check completion for each lesson for THIS specific user
+            chapter_complete = True
+            if lessons:
+                for lesson in lessons:
+                    lesson_progress = frappe.db.get_value(
+                        "LMS Course Progress",
+                        {
+                            "course": course,
+                            "lesson": lesson,
+                            "member": user_id,  # Check for the EMPLOYEE, not session user
+                        },
+                        "status",
+                    )
+                    if lesson_progress != "Complete":
+                        chapter_complete = False
+                        break
+            else:
+                # If no lessons, check chapter-level progress (for SCORM)
+                chapter_progress = frappe.db.get_value(
+                    "LMS Course Progress",
+                    {
+                        "course": course,
+                        "chapter": chapter_name,
+                        "member": user_id,  # Check for the EMPLOYEE, not session user
+                    },
+                    "status",
+                )
+                chapter_complete = (chapter_progress == "Complete")
+
+            # A chapter is unlockable if it's incomplete AND all previous chapters are complete
+            # This gives us the FIRST locked chapter in the sequence
+            if not chapter_complete and all_previous_complete:
+                all_locked_chapters.append({
+                    "chapter": chapter_name,
+                    "course": course,
+                    "course_title": course_title,
+                    "chapter_title": chapter.title,
+                    "idx": chapter.idx,
+                    "display": f"{course_title} - {chapter.title}"
+                })
+
+            if not chapter_complete:
+                all_previous_complete = False
+
+    return all_locked_chapters
+
+
+@frappe.whitelist()
+def unlock_chapter_for_employee(employee, course, chapter):
+    """Master Trainer: Manually unlock a specific chapter for an employee
+
+    Args:
+        employee: Employee ID or user email
+        course: Course name
+        chapter: Chapter name
+    """
+    frappe.only_for(["LMS Master Trainer", "LMS HR", "System Manager"])
+
+    # Check if employee is an email (user) or Employee ID
+    if "@" in employee:
+        # It's a user email
+        user_id = employee
+    else:
+        # It's an Employee ID - get user_id
+        user_id = frappe.db.get_value("Employee", employee, "user_id")
+        if not user_id:
+            frappe.throw("Employee has no linked user account")
+
+    # Check if user is enrolled
+    enrollment = frappe.db.exists("LMS Enrollment", {"member": user_id, "course": course})
+    if not enrollment:
+        frappe.throw(f"Employee is not enrolled in this course")
+
+    # Get chapter title
+    chapter_title = frappe.db.get_value("Course Chapter", chapter, "title")
+    if not chapter_title:
+        frappe.throw("Chapter not found")
+
+    # Check/create LMS Course Progress record
+    progress = frappe.db.get_value(
+        "LMS Course Progress",
+        {"member": user_id, "course": course, "chapter": chapter},
+        "name",
+    )
+
+    if progress:
+        # Update existing record
+        progress_doc = frappe.get_doc("LMS Course Progress", progress)
+        progress_doc.manually_unlocked = 1
+        progress_doc.unlocked_by = frappe.session.user
+        progress_doc.unlock_date = frappe.utils.now()
+        progress_doc.save(ignore_permissions=True)
+    else:
+        # Create new progress record
+        progress_doc = frappe.get_doc({
+            "doctype": "LMS Course Progress",
+            "member": user_id,
+            "course": course,
+            "chapter": chapter,
+            "manually_unlocked": 1,
+            "unlocked_by": frappe.session.user,
+            "unlock_date": frappe.utils.now(),
+            "status": "Not Started",
+        })
+        progress_doc.insert(ignore_permissions=True)
+
+    frappe.db.commit()
+
+    return {
+        "success": True,
+        "message": f"Chapter '{chapter_title}' unlocked for employee",
+        "chapter": chapter,
+        "chapter_title": chapter_title,
     }

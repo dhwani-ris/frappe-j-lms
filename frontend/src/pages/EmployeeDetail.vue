@@ -196,6 +196,15 @@
 							>
 								{{ __('Unassign') }}
 							</Button>
+							<Button
+								v-if="userResource.data?.is_system_manager || userResource.data?.lms_roles?.includes('LMS Master Trainer') || userResource.data?.lms_roles?.includes('LMS HR')"
+								variant="subtle"
+								theme="blue"
+								size="sm"
+								@click.stop="openUnlockChapterModal(enrollment)"
+							>
+								{{ __('Unlock Chapter') }}
+							</Button>
 						</div>
 					</div>
 				</div>
@@ -543,6 +552,63 @@
 				</div>
 			</template>
 		</Dialog>
+
+		<!-- Unlock Chapter Modal -->
+		<Dialog
+			v-model="showUnlockChapterModal"
+			:options="{ title: __('Unlock Chapter') }"
+		>
+			<template #body-content>
+				<div class="space-y-4">
+					<p class="text-ink-gray-7">
+						{{ __('Select a chapter to unlock for') }}
+						<strong>{{ employeeData.data?.employee_name }}</strong>
+						{{ __('in course') }}
+						<strong>{{ selectedCourseForUnlock?.course_title }}</strong>
+					</p>
+					<div v-if="lockedChapters.loading" class="text-ink-gray-5">
+						{{ __('Loading locked chapters...') }}
+					</div>
+					<div v-else-if="!lockedChapters.data?.length" class="text-ink-gray-5">
+						{{ __('No locked chapters available to unlock') }}
+					</div>
+					<div v-else class="space-y-2">
+						<label class="text-sm font-medium text-ink-gray-7">
+							{{ __('Select Chapter') }}
+						</label>
+						<select
+							v-model="selectedChapterToUnlock"
+							class="form-control"
+						>
+							<option value="">{{ __('-- Select Chapter --') }}</option>
+							<option
+								v-for="chapter in lockedChapters.data"
+								:key="chapter.name"
+								:value="chapter.name"
+							>
+								{{ chapter.idx }}. {{ chapter.title }}
+							</option>
+						</select>
+					</div>
+				</div>
+			</template>
+			<template #actions>
+				<div class="flex space-x-2">
+					<Button variant="subtle" @click="showUnlockChapterModal = false">
+						{{ __('Cancel') }}
+					</Button>
+					<Button
+						variant="solid"
+						theme="blue"
+						:loading="doUnlockChapter.loading"
+						:disabled="!selectedChapterToUnlock"
+						@click="handleUnlockChapter"
+					>
+						{{ __('Unlock') }}
+					</Button>
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -821,6 +887,59 @@ const handleUnassignRole = async () => {
 		employeeData.reload()
 	} catch (err) {
 		toast.error(err.messages?.[0] || __('Failed to unassign role'))
+	}
+}
+
+// ─── Unlock Chapter ──────────────────────────────────────────────────────────
+const showUnlockChapterModal = ref(false)
+const selectedCourseForUnlock = ref(null)
+const selectedChapterToUnlock = ref('')
+
+const lockedChapters = createResource({
+	url: 'lms.lms.custom.dashboard_api.get_locked_chapters_for_employee',
+	makeParams(values) {
+		return {
+			employee: props.employeeId,
+			course: values.course,
+		}
+	},
+})
+
+const doUnlockChapter = createResource({
+	url: 'lms.lms.custom.dashboard_api.unlock_chapter_for_employee',
+})
+
+const openUnlockChapterModal = (enrollment) => {
+	selectedCourseForUnlock.value = enrollment
+	selectedChapterToUnlock.value = ''
+	showUnlockChapterModal.value = true
+
+	// Fetch locked chapters for this course
+	lockedChapters.submit({
+		course: enrollment.course,
+	})
+}
+
+const handleUnlockChapter = async () => {
+	if (!selectedChapterToUnlock.value) {
+		toast.error(__('Please select a chapter to unlock'))
+		return
+	}
+
+	try {
+		await doUnlockChapter.submit({
+			employee: props.employeeId,
+			course: selectedCourseForUnlock.value.course,
+			chapter: selectedChapterToUnlock.value,
+		})
+		toast.success(
+			doUnlockChapter.data?.message || __('Chapter unlocked successfully')
+		)
+		showUnlockChapterModal.value = false
+		selectedChapterToUnlock.value = ''
+		employeeData.reload()
+	} catch (err) {
+		toast.error(err.messages?.[0] || __('Failed to unlock chapter'))
 	}
 }
 </script>
