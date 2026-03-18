@@ -1437,12 +1437,16 @@ def get_quiz_analytics(quiz_id):
 
 
 @frappe.whitelist()
-def get_locked_chapters_for_employee(employee):
-    """Get list of ALL locked chapters for an employee across ALL enrolled courses
+def get_locked_chapters_for_employee(employee, batch):
+    """Get list of locked chapters for an employee in a specific batch
 
     Args:
         employee: Employee ID or user email
+        batch: Batch ID to filter courses by batch (required)
     """
+
+    if not batch:
+        frappe.throw("Batch is required")
 
     # Check if employee is an email (user) or Employee ID
     if "@" in employee:
@@ -1454,9 +1458,20 @@ def get_locked_chapters_for_employee(employee):
         if not user_id:
             frappe.throw("Employee has no linked user account")
 
-    # Get all enrollments for this user
+    # Get courses assigned to this batch
+    batch_courses = frappe.get_all(
+        "Batch Course", {"parent": batch}, ["course"], pluck="course"
+    )
+
+    if not batch_courses:
+        return []
+
+    # Filter enrollments to only batch courses
     enrollments = frappe.get_all(
-        "LMS Enrollment", filters={"member": user_id}, fields=["course"], pluck="course"
+        "LMS Enrollment",
+        filters={"member": user_id, "course": ["in", batch_courses]},
+        fields=["course"],
+        pluck="course",
     )
 
     if not enrollments:
@@ -1482,7 +1497,7 @@ def get_locked_chapters_for_employee(employee):
             fields=["chapter", "idx"],
             order_by="idx",
         )
-        print("Chapters", chapters)
+
         all_previous_complete = True
 
         for chapter in chapters:
@@ -1490,8 +1505,7 @@ def get_locked_chapters_for_employee(employee):
                 "Course Chapter", chapter.chapter, "*", as_dict=True
             )
             chapter_name = chapter_details.get("name")
-            # print("Det",chapter_details)
-            # return
+
             # Check if chapter is already manually unlocked
             progress = frappe.db.get_value(
                 "LMS Course Progress",
@@ -1512,7 +1526,7 @@ def get_locked_chapters_for_employee(employee):
                 fields=["lesson"],
                 pluck="lesson",
             )
-            print(lessons)
+
             # Check completion for each lesson for THIS specific user
             chapter_complete = True
             if lessons:
