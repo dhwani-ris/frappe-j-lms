@@ -197,7 +197,7 @@
 								{{ __('Unassign') }}
 							</Button>
 							<Button
-								v-if="userResource.data?.is_system_manager || userResource.data?.lms_roles?.includes('LMS Master Trainer') || userResource.data?.lms_roles?.includes('LMS HR')"
+								v-if="userResource.data?.is_system_manager || userResource.data?.is_master_trainer || userResource.data?.is_lms_hr"
 								variant="subtle"
 								theme="blue"
 								size="sm"
@@ -629,6 +629,7 @@ import { Pencil } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import dayjs from 'dayjs'
 import { ref, computed, reactive } from 'vue'
+import { usersStore } from '@/stores/user.js'
 
 const props = defineProps({
 	employeeId: {
@@ -636,6 +637,8 @@ const props = defineProps({
 		required: true,
 	},
 })
+
+const { userResource } = usersStore()
 
 const currentTab = ref('enrollments')
 
