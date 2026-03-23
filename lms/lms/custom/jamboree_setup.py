@@ -38,9 +38,9 @@ def create_jamboree_custom_docperms():
 	# Base permissions from the original DocType definitions that must be preserved
 	base_perms = [
 		# LMS Course
-		{"parent": "LMS Course", "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
-		{"parent": "LMS Course", "role": "Course Creator", "read": 1, "write": 1, "create": 1, "delete": 1},
-		{"parent": "LMS Course", "role": "Moderator", "read": 1, "write": 1, "create": 1, "delete": 1},
+		{"parent": "LMS Course", "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "import": 1},
+		{"parent": "LMS Course", "role": "Course Creator", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "import": 1},
+		{"parent": "LMS Course", "role": "Moderator", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "import": 1},
 		# LMS Enrollment
 		{"parent": "LMS Enrollment", "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
 		{"parent": "LMS Enrollment", "role": "LMS Student", "read": 1, "write": 1, "create": 1, "delete": 0},
@@ -122,19 +122,19 @@ def create_jamboree_custom_docperms():
 	]
 
 	master_trainer_perms = [
-		{"parent": "LMS Course", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "Course Lesson", "read": 1, "write": 1, "create": 1, "delete": 1},
-		{"parent": "Course Chapter", "read": 1, "write": 1, "create": 1, "delete": 1},
-		{"parent": "LMS Enrollment", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Batch", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Batch Enrollment", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Quiz", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Quiz Submission", "read": 1, "write": 1, "create": 0, "delete": 0},
-		{"parent": "LMS Assignment", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Assignment Submission", "read": 1, "write": 1, "create": 0, "delete": 0},
-		{"parent": "LMS Certificate", "read": 1, "write": 1, "create": 1, "delete": 0},
-		{"parent": "LMS Certificate Request", "read": 1, "write": 1, "create": 0, "delete": 0},
-		{"parent": "LMS Category", "read": 1, "write": 1, "create": 1, "delete": 0},
+		{"parent": "LMS Course", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "Course Lesson", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "import": 1},
+		{"parent": "Course Chapter", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "import": 1},
+		{"parent": "LMS Enrollment", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Batch", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Batch Enrollment", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Quiz", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Quiz Submission", "read": 1, "write": 1, "create": 0, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Assignment", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Assignment Submission", "read": 1, "write": 1, "create": 0, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Certificate", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Certificate Request", "read": 1, "write": 1, "create": 0, "delete": 0, "export": 1, "import": 1},
+		{"parent": "LMS Category", "read": 1, "write": 1, "create": 1, "delete": 0, "export": 1, "import": 1},
 	]
 
 	manager_perms = [
@@ -191,10 +191,13 @@ def create_jamboree_custom_docperms():
 			doc.parenttype = "DocType"
 			doc.parentfield = "permissions"
 			doc.role = perm["role"]
-			doc.read = perm["read"]
-			doc.write = perm["write"]
-			doc.create = perm["create"]
-			doc.delete = perm["delete"]
+			doc.read = perm.get("read", 0)
+			doc.write = perm.get("write", 0)
+			doc.create = perm.get("create", 0)
+			doc.delete = perm.get("delete", 0)
+			doc.export = perm.get("export", 0)
+			if "import" in perm:
+				doc.import_ = perm.get("import", 0)
 			doc.save(ignore_permissions=True)
 
 

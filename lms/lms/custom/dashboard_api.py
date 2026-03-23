@@ -414,11 +414,26 @@ def get_trainer_dashboard():
     # 			"students": direct_students,
     # 		})
 
-    # Count pending quiz/assignment submissions
-    pending_evaluations = frappe.db.count(
-        "LMS Quiz Submission",
-        {"member": ["!=", frappe.session.user]},
-    )
+    # Count pending quiz/assignment submissions from students in YOUR batches only
+    if seen_students:
+        # Get students in your batches
+        student_list = list(seen_students)
+
+        # Count quiz submissions from these students only
+        pending_quiz_evaluations = frappe.db.count(
+            "LMS Quiz Submission",
+            {"member": ["in", student_list]},
+        )
+
+        # Count assignment submissions that need grading (status = Submitted or Not Graded)
+        pending_assignment_evaluations = frappe.db.count(
+            "LMS Assignment Submission",
+            {"member": ["in", student_list], "status": ["in", ["Submitted", "Not Graded"]]},
+        )
+
+        pending_evaluations = pending_quiz_evaluations + pending_assignment_evaluations
+    else:
+        pending_evaluations = 0
 
     return {
         "batches": batches_data,
