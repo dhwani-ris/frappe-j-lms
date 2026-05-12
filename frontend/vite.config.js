@@ -28,6 +28,8 @@ export default defineConfig(async ({ mode }) => {
 				},
 				workbox: {
 					cleanupOutdatedCaches: true,
+					skipWaiting: true,
+					clientsClaim: true,
 					maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
 					globDirectory: '/assets/lms/frontend',
 					globPatterns: ['**/*.{js,ts,css,html,svg}'],
