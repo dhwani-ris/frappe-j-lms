@@ -429,6 +429,7 @@ onMounted(() => {
 	socket.on('update_lesson_progress', (data) => {
 		if (data.course === props.courseName) {
 			lessonProgress.value = data.progress
+			courseOutline.reload()
 		}
 	})
 })
@@ -536,6 +537,7 @@ const progress = createResource({
 	},
 	onSuccess(data) {
 		lessonProgress.value = data
+		courseOutline.reload()
 	},
 })
 
