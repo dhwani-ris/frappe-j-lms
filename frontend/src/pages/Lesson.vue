@@ -18,7 +18,7 @@
 					</template>
 				</Button>
 				<CertificationLinks :courseName="courseName" />
-				<Button v-if="lesson.data.prev" @click="switchLesson('prev')">
+				<Button v-if="lesson.data.prev && !prevLocked" @click="switchLesson('prev')">
 					<template #prefix>
 						<ChevronLeft class="w-4 h-4 stroke-1" />
 					</template>
@@ -43,7 +43,7 @@
 					</Button>
 				</router-link>
 
-				<Button v-if="lesson.data.next" @click="switchLesson('next')">
+				<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
 					<template #suffix>
 						<ChevronRight class="w-4 h-4 stroke-1" />
 					</template>
@@ -154,7 +154,7 @@
 										<MessageCircleQuestion class="w-4 h-4 stroke-1.5" />
 									</template>
 								</Button>
-								<Button v-if="lesson.data.prev" @click="switchLesson('prev')">
+								<Button v-if="lesson.data.prev && !prevLocked" @click="switchLesson('prev')">
 									<template #prefix>
 										<ChevronLeft class="w-4 h-4 stroke-1" />
 									</template>
@@ -179,7 +179,7 @@
 									</Button>
 								</router-link>
 
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
 									<template #suffix>
 										<ChevronRight class="w-4 h-4 stroke-1" />
 									</template>
@@ -554,6 +554,38 @@ const notes = createListResource({
 			}, 500)
 		})
 	},
+})
+
+const courseOutline = createResource({
+	url: 'lms.lms.utils.get_course_outline',
+	cache: ['course_outline_locks', props.courseName],
+	makeParams() {
+		return {
+			course: props.courseName,
+			progress: true,
+		}
+	},
+	auto: true,
+})
+
+const isChapterLocked = (chapterIdx) => {
+	if (!courseOutline.data || !chapterIdx) return false
+	const chapter = courseOutline.data.find(
+		(c) => String(c.idx) === String(chapterIdx)
+	)
+	return chapter ? !!chapter.is_locked : false
+}
+
+const nextLocked = computed(() => {
+	if (!lesson.data?.next) return false
+	const chapterIdx = String(lesson.data.next).split('.')[0]
+	return isChapterLocked(chapterIdx)
+})
+
+const prevLocked = computed(() => {
+	if (!lesson.data?.prev) return false
+	const chapterIdx = String(lesson.data.prev).split('.')[0]
+	return isChapterLocked(chapterIdx)
 })
 
 const breadcrumbs = computed(() => {
