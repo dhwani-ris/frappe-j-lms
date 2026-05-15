@@ -18,7 +18,7 @@
 					</template>
 				</Button>
 				<CertificationLinks :courseName="courseName" />
-				<Button v-if="lesson.data.prev && !prevLocked" @click="switchLesson('prev')">
+				<Button v-if="lesson.data.prev" @click="switchLesson('prev')">
 					<template #prefix>
 						<ChevronLeft class="w-4 h-4 stroke-1" />
 					</template>
@@ -43,7 +43,7 @@
 					</Button>
 				</router-link>
 
-				<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
+				<Button v-if="lesson.data.next" @click="switchLesson('next')">
 					<template #suffix>
 						<ChevronRight class="w-4 h-4 stroke-1" />
 					</template>
@@ -154,7 +154,7 @@
 										<MessageCircleQuestion class="w-4 h-4 stroke-1.5" />
 									</template>
 								</Button>
-								<Button v-if="lesson.data.prev && !prevLocked" @click="switchLesson('prev')">
+								<Button v-if="lesson.data.prev" @click="switchLesson('prev')">
 									<template #prefix>
 										<ChevronLeft class="w-4 h-4 stroke-1" />
 									</template>
@@ -179,7 +179,7 @@
 									</Button>
 								</router-link>
 
-								<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
+								<Button v-if="lesson.data.next" @click="switchLesson('next')">
 									<template #suffix>
 										<ChevronRight class="w-4 h-4 stroke-1" />
 									</template>
