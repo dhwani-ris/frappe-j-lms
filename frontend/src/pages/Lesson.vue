@@ -43,7 +43,7 @@
 					</Button>
 				</router-link>
 
-				<Button v-if="lesson.data.next" @click="switchLesson('next')">
+				<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
 					<template #suffix>
 						<ChevronRight class="w-4 h-4 stroke-1" />
 					</template>
@@ -179,7 +179,7 @@
 									</Button>
 								</router-link>
 
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button v-if="lesson.data.next && !nextLocked" @click="switchLesson('next')">
 									<template #suffix>
 										<ChevronRight class="w-4 h-4 stroke-1" />
 									</template>
