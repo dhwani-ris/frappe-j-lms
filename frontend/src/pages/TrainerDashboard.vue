@@ -60,6 +60,16 @@
 					:placeholder="__('All Progress Levels')"
 					class="w-48"
 				/>
+				<Button
+					v-if="hasActiveFilters"
+					variant="subtle"
+					@click="clearFilters"
+				>
+					<template #prefix>
+						<X class="size-4 stroke-1.5" />
+					</template>
+					{{ __('Clear Filters') }}
+				</Button>
 			</div>
 
 			<!-- Summary Cards -->
@@ -370,7 +380,7 @@
 
 <script setup>
 import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, FormControl, Dialog, toast } from 'frappe-ui'
-import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3 } from 'lucide-vue-next'
+import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3, X } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import dayjs from 'dayjs'
@@ -414,6 +424,16 @@ const toggleStudent = (member) => {
 watch([searchQuery, batchFilter, progressFilter], () => {
 	currentPage.value = 1
 })
+
+const hasActiveFilters = computed(() => {
+	return !!(searchQuery.value || batchFilter.value || progressFilter.value)
+})
+
+const clearFilters = () => {
+	searchQuery.value = ''
+	batchFilter.value = ''
+	progressFilter.value = ''
+}
 
 const openStudentQuizAnalytics = (student) => {
 	selectedStudent.value = {

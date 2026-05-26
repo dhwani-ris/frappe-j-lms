@@ -791,6 +791,21 @@ def create_employee(
             new_user.enabled = 1
             new_user.send_welcome_email = 0
             new_user.new_password = frappe.generate_hash(length=12)
+            # Attach a role before save so frappe's check_roles_added() does not
+            # fire the "Newly created user has no roles enabled" msgprint, which
+            # gets surfaced to the LMS frontend and makes the user think the
+            # create-employee call failed.
+            if role_profile and frappe.db.exists("Role Profile", role_profile):
+                new_user.role_profile_name = role_profile
+            else:
+                new_user.append("roles", {"role": "LMS Student"})
+            # Hard-suppress the welcome email regardless of what
+            # send_welcome_email ends up being. A site-level Server Script on
+            # User.before_insert forces send_welcome_email=1, which then tries
+            # to send via the default Email Account; on sites whose
+            # encryption_key has rotated this throws "Failed to decrypt key
+            # Email Account.No Reply.password" and aborts the whole save.
+            new_user.flags.no_welcome_mail = True
             new_user.save(ignore_permissions=True)
             actual_user_id = user_email
             user_created = True
@@ -1279,18 +1294,31 @@ def bulk_upload_employees():
                                 "Bulk Upload Debug",
                             )
 
-                            user = frappe.get_doc(
-                                {
-                                    "doctype": "User",
-                                    "email": email,
-                                    "first_name": first_name[
-                                        :140
-                                    ],  # Frappe field limit
-                                    "last_name": last_name[:140] if last_name else "",
-                                    "send_welcome_email": 0,
-                                    "enabled": 1,
-                                }
-                            )
+                            user_payload = {
+                                "doctype": "User",
+                                "email": email,
+                                "first_name": first_name[
+                                    :140
+                                ],  # Frappe field limit
+                                "last_name": last_name[:140] if last_name else "",
+                                "send_welcome_email": 0,
+                                "enabled": 1,
+                            }
+                            # Attach a role before save so frappe's
+                            # check_roles_added() does not fire the "no roles
+                            # enabled" msgprint into the bulk-upload response.
+                            if role_profile and frappe.db.exists(
+                                "Role Profile", role_profile
+                            ):
+                                user_payload["role_profile_name"] = role_profile
+                            else:
+                                user_payload["roles"] = [{"role": "LMS Student"}]
+                            user = frappe.get_doc(user_payload)
+                            # See create_employee() for context: a site Server
+                            # Script forces send_welcome_email=1, which tries to
+                            # send mail through an Email Account whose password
+                            # cannot be decrypted, aborting the row.
+                            user.flags.no_welcome_mail = True
                             user.insert(ignore_permissions=True)
                             doc.user_id = email
                         except Exception as e:
