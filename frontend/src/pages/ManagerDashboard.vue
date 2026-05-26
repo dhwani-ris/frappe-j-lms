@@ -51,6 +51,16 @@
 					:placeholder="__('All Progress Levels')"
 					class="w-48"
 				/>
+				<Button
+					v-if="hasActiveFilters"
+					variant="subtle"
+					@click="clearFilters"
+				>
+					<template #prefix>
+						<X class="size-4 stroke-1.5" />
+					</template>
+					{{ __('Clear Filters') }}
+				</Button>
 			</div>
 			<!-- Summary Cards -->
 			<div
@@ -303,7 +313,7 @@ import {
 	Input,
 	FormControl,
 } from 'frappe-ui'
-import { BarChart3, Download, ChevronRight, Search } from 'lucide-vue-next'
+import { BarChart3, Download, ChevronRight, Search, X } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import { ref, computed, watch } from 'vue'
@@ -347,6 +357,16 @@ const openQuizAnalytics = (report) => {
 watch([searchQuery, departmentFilter, progressFilter], () => {
 	currentPage.value = 1
 })
+
+const hasActiveFilters = computed(() => {
+	return !!(searchQuery.value || departmentFilter.value || progressFilter.value)
+})
+
+const clearFilters = () => {
+	searchQuery.value = ''
+	departmentFilter.value = ''
+	progressFilter.value = ''
+}
 
 const getEnrollmentStatus = (progress) => {
 	const p = progress || 0
