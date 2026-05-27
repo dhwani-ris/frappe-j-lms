@@ -1543,7 +1543,7 @@ def get_locked_chapters_for_employee(employee, batch):
 
         all_previous_complete = True
 
-        for chapter in chapters:
+        for chapter_idx, chapter in enumerate(chapters):
             chapter_details = frappe.db.get_value(
                 "Course Chapter", chapter.chapter, "*", as_dict=True
             )
@@ -1599,17 +1599,39 @@ def get_locked_chapters_for_employee(employee, batch):
                 )
                 chapter_complete = chapter_progress == "Complete"
 
-            # A chapter is unlockable if it's incomplete AND all previous chapters are complete
-            # This gives us the FIRST locked chapter in the sequence
-            if not chapter_complete and all_previous_complete:
+            # A chapter is unlockable if it's incomplete AND all previous chapters are complete.
+            # This identifies the FIRST incomplete chapter in the sequence, which is the chapter
+            # we actually flag with `manually_unlocked` (the "unlock target").
+            #
+            # Display vs. unlock target: because manually unlocking an incomplete chapter also
+            # opens the chapter immediately after it (the sequential-learning gate in
+            # `get_course_outline` treats a manually-unlocked chapter as satisfied for the next
+            # chapter), the student really gains access to that *following* chapter. So we show
+            # the NEXT chapter in the dropdown while keeping the unlock target as this chapter.
+            #
+            # If this is the LAST chapter there is no following chapter to grant access to, so
+            # unlocking it is pointless — we skip it. When that leaves no entries at all, the
+            # frontend shows "No locked chapters available to unlock".
+            if not chapter_complete and all_previous_complete and chapter_idx + 1 < len(chapters):
+                next_chapter = chapters[chapter_idx + 1]
+                display_idx = next_chapter.idx
+                display_title = (
+                    frappe.db.get_value("Course Chapter", next_chapter.chapter, "title")
+                    or chapter_details.get("title")
+                )
+
                 all_locked_chapters.append(
                     {
+                        # Identity fields = the chapter that is actually unlocked (first incomplete).
                         "chapter": chapter_name,
+                        "name": chapter_name,
                         "course": course,
                         "course_title": course_title,
-                        "chapter_title": chapter_details.get("title"),
-                        "idx": chapter.idx,
-                        "display": f"{course_title} - {chapter_details.get('title')}",
+                        # Display fields = the NEXT chapter the student gains access to.
+                        "chapter_title": display_title,
+                        "title": display_title,
+                        "idx": display_idx,
+                        "display": f"{course_title} - {display_title}",
                     }
                 )
 

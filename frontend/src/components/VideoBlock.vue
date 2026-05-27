@@ -267,7 +267,9 @@ const updateNextQuiz = () => {
 }
 
 const fileURL = computed(() => {
-	return props.file
+	// Encode the URL so filenames containing spaces or other special
+	// characters resolve correctly (matches AudioBlock / PDF / image handling).
+	return encodeURI(props.file)
 })
 
 const playVideo = () => {
