@@ -708,7 +708,17 @@ watch(
 		setupLesson(data)
 		getPlyrSource()
 		updateNotes()
-		if (data.icon == 'icon-youtube') clearInterval(timerInterval)
+		// Decide the completion signal now that the lesson data is loaded.
+		// Video lessons complete by watching to the end (handled by
+		// attachVideoCompletionHandlers), so the 30s timer is disabled for them.
+		// Non-video lessons (e.g. text) complete via the 30s timer — start it
+		// here because onMounted's startTimer runs before data (and membership)
+		// is available and bails out, so a freshly opened lesson never started it.
+		if (data?.icon == 'icon-youtube') {
+			clearInterval(timerInterval)
+		} else {
+			startTimer()
+		}
 	}
 )
 
@@ -717,7 +727,27 @@ const getPlyrSource = async () => {
 	if (plyrSources.value.length == 0) {
 		plyrSources.value = await enablePlyr()
 	}
+	attachVideoCompletionHandlers()
 	updateVideoWatchDuration()
+}
+
+// Mark the lesson complete when the learner finishes the video. This covers
+// both embedded players (YouTube / Vimeo, etc. via Plyr) and native <video>
+// uploads. The 30s timer is intentionally disabled for video lessons (see the
+// icon-youtube check in the lesson.data watcher), so watch-to-finish is the
+// completion signal for them — without this a video lesson in a
+// sequential-learning course could never be completed, locking the next chapter.
+const attachVideoCompletionHandlers = () => {
+	plyrSources.value.forEach((player) => {
+		if (!player || player._lmsEndedBound) return
+		player._lmsEndedBound = true
+		player.on('ended', () => markProgress())
+	})
+	document.querySelectorAll('video').forEach((video) => {
+		if (video.dataset.lmsEndedBound) return
+		video.dataset.lmsEndedBound = 'true'
+		video.addEventListener('ended', () => markProgress())
+	})
 }
 
 const updateVideoWatchDuration = () => {
@@ -767,7 +797,11 @@ const updateVideoTime = (video) => {
 
 const startTimer = () => {
 	if (!lesson.data?.membership) return
-	let timerInterval = setInterval(() => {
+	// Assign the module-level `timerInterval` (do not shadow it with `let`) so
+	// the clearInterval calls in resetLessonState, onBeforeUnmount and the
+	// icon-youtube branch of the lesson.data watcher can actually stop it.
+	clearInterval(timerInterval)
+	timerInterval = setInterval(() => {
 		timer.value++
 		if (timer.value == 30) {
 			clearInterval(timerInterval)
