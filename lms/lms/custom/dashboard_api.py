@@ -140,6 +140,117 @@ def get_manager_dashboard():
     }
 
 
+def _get_course_chapter_structure(course, _cache):
+    """Return ordered chapters for a course.
+
+    Shape: [{name, title, idx, is_scorm, lessons: [lesson_name, ...]}], ordered by idx.
+    Cached in the dict ``_cache`` so each course's structure is built only once per request.
+    """
+    if course in _cache:
+        return _cache[course]
+
+    chapter_refs = frappe.get_all(
+        "Chapter Reference", {"parent": course}, ["chapter", "idx"], order_by="idx"
+    )
+    chapters = []
+    for ref in chapter_refs:
+        cd = frappe.db.get_value(
+            "Course Chapter",
+            ref.chapter,
+            ["name", "title", "is_scorm_package"],
+            as_dict=True,
+        )
+        if not cd:
+            continue
+        lessons = frappe.get_all(
+            "Lesson Reference", {"parent": ref.chapter}, pluck="lesson"
+        )
+        chapters.append(
+            {
+                "name": cd.name,
+                "title": cd.title,
+                "idx": ref.idx,
+                "is_scorm": cint(cd.is_scorm_package),
+                "lessons": lessons,
+            }
+        )
+
+    _cache[course] = chapters
+    return chapters
+
+
+def _get_unlockable_chapters(course, member, chapters, course_title, sequential_cache):
+    """Return the chapters the member can be *offered to unlock* in a course.
+
+    These are exactly the entries that surface in the trainer dashboard's "Unlock Chapter"
+    action button. A course only contributes entries when sequential learning is enabled and
+    the member has a first-incomplete chapter that is not the last chapter. Following the
+    established convention of ``get_locked_chapters_for_employee``, each entry's *identity*
+    (``chapter``/``name``) is that first-incomplete chapter (the actual unlock target) while
+    the *display* fields point at the NEXT chapter — the one the member visibly gains access
+    to. ``display_chapter`` is that next chapter's name, used for filtering.
+
+    This helper is the single source of truth shared by both the dashboard's Course/Chapter
+    filters and ``get_locked_chapters_for_employee``, so the filters always match the button.
+    It is member-aware and bulk-fetches progress in one query (no per-lesson lookups).
+    """
+    if course not in sequential_cache:
+        sequential_cache[course] = cint(
+            frappe.db.get_value("LMS Course", course, "enable_sequential_learning")
+        )
+
+    if not sequential_cache[course]:
+        return []  # Non-sequential courses never lock anything, so nothing to unlock.
+
+    rows = frappe.get_all(
+        "LMS Course Progress",
+        {"member": member, "course": course},
+        ["lesson", "chapter", "status", "manually_unlocked"],
+    )
+    complete_lessons = {r.lesson for r in rows if r.lesson and r.status == "Complete"}
+    complete_chapters = {r.chapter for r in rows if r.chapter and r.status == "Complete"}
+    unlocked = {r.chapter for r in rows if r.chapter and r.manually_unlocked}
+
+    entries = []
+    all_prev_complete = True
+    for idx, ch in enumerate(chapters):
+        # Already manually unlocked: skip without affecting the gate (matches existing logic).
+        if ch["name"] in unlocked:
+            continue
+
+        if ch["lessons"]:
+            ch_complete = all(lesson in complete_lessons for lesson in ch["lessons"])
+        else:
+            # SCORM / lessonless chapter: completion is tracked at the chapter level.
+            ch_complete = ch["name"] in complete_chapters
+
+        # The first incomplete chapter whose predecessors are all complete is the unlock
+        # target — but only when there is a following chapter for the member to gain access
+        # to (unlocking the last chapter is pointless, so it is not offered).
+        if not ch_complete and all_prev_complete and idx + 1 < len(chapters):
+            nxt = chapters[idx + 1]
+            entries.append(
+                {
+                    # Identity = first incomplete chapter (the actual unlock target).
+                    "chapter": ch["name"],
+                    "name": ch["name"],
+                    "course": course,
+                    "course_title": course_title,
+                    # Display = the NEXT chapter the member gains access to.
+                    "chapter_title": nxt["title"],
+                    "title": nxt["title"],
+                    "idx": nxt["idx"],
+                    "display_chapter": nxt["name"],
+                    "display": f"{course_title} - {nxt['title']}",
+                }
+            )
+
+        if not ch_complete:
+            all_prev_complete = False
+
+    return entries
+
+
 @frappe.whitelist()
 def get_trainer_dashboard():
     """Trainer dashboard: batches where user is instructor + student progress."""
@@ -178,6 +289,11 @@ def get_trainer_dashboard():
     student_count_for_avg = 0
     pending_evaluations = 0
     seen_students = set()  # Track unique students for stats only
+
+    # Request-scoped caches + course list for the Course/Chapter filters.
+    chapter_cache = {}  # course -> ordered chapter structure (built once per course)
+    sequential_cache = {}  # course -> enable_sequential_learning (0/1)
+    courses_seen = {}  # course -> {name, title, chapters: [{name, title, idx}]}
 
     # Process batches
     for batch_name in batch_names:
@@ -222,6 +338,34 @@ def get_trainer_dashboard():
             for e in enrollments:
                 e.course_title = frappe.db.get_value("LMS Course", e.course, "title")
                 e.status = calculate_status(cint(e.progress))
+
+                # Enrich with the chapters this employee can be offered to unlock — the same
+                # data that drives their "Unlock Chapter" action button. The Course/Chapter
+                # filters are built from these, so a course/chapter only appears (and an
+                # employee only matches) when it is actionable for that employee.
+                course_chapters = _get_course_chapter_structure(e.course, chapter_cache)
+                unlockable = _get_unlockable_chapters(
+                    e.course,
+                    student.member,
+                    course_chapters,
+                    e.course_title,
+                    sequential_cache,
+                )
+                # The display-chapter names the chapter filter matches against.
+                e.actionable_chapters = [u["display_chapter"] for u in unlockable]
+
+                if unlockable:
+                    course_entry = courses_seen.setdefault(
+                        e.course,
+                        {"name": e.course, "title": e.course_title, "chapters": {}},
+                    )
+                    for u in unlockable:
+                        # Dedup by display-chapter; only chapters seen in some button appear.
+                        course_entry["chapters"][u["display_chapter"]] = {
+                            "name": u["display_chapter"],
+                            "title": u["chapter_title"],
+                            "idx": u["idx"],
+                        }
 
             # Get quiz submissions only for courses in this batch
             if batch_courses:
@@ -435,8 +579,18 @@ def get_trainer_dashboard():
     else:
         pending_evaluations = 0
 
+    # Only actionable courses (those that appear in at least one employee's action button),
+    # each carrying just the chapters offered for unlocking, ordered by chapter position.
+    actionable_courses = []
+    for course_entry in sorted(courses_seen.values(), key=lambda c: (c["title"] or "")):
+        course_entry["chapters"] = sorted(
+            course_entry["chapters"].values(), key=lambda ch: ch["idx"]
+        )
+        actionable_courses.append(course_entry)
+
     return {
         "batches": batches_data,
+        "courses": actionable_courses,
         "summary": {
             "total_students": len(seen_students),  # Use unique student count
             "avg_progress": (
@@ -1520,123 +1674,21 @@ def get_locked_chapters_for_employee(employee, batch):
     if not enrollments:
         return []
 
+    # Reuse the shared helper so this dropdown and the dashboard's Course/Chapter filters
+    # are always computed identically. See `_get_unlockable_chapters` for the unlock-target
+    # vs. display-chapter convention.
+    chapter_cache = {}
+    sequential_cache = {}
     all_locked_chapters = []
 
-    # For each enrolled course, get locked chapters
     for course in enrollments:
-        # Get course details
-        course_doc = frappe.get_doc("LMS Course", course)
-
-        if not course_doc.enable_sequential_learning:
-            continue  # Skip courses without sequential learning
-
-        # Get course title
-        course_title = course_doc.title
-
-        # Get all chapters in order
-        chapters = frappe.get_all(
-            "Chapter Reference",
-            filters={"parent": course},
-            fields=["chapter", "idx"],
-            order_by="idx",
+        course_title = frappe.db.get_value("LMS Course", course, "title")
+        chapters = _get_course_chapter_structure(course, chapter_cache)
+        all_locked_chapters.extend(
+            _get_unlockable_chapters(
+                course, user_id, chapters, course_title, sequential_cache
+            )
         )
-
-        all_previous_complete = True
-
-        for chapter_idx, chapter in enumerate(chapters):
-            chapter_details = frappe.db.get_value(
-                "Course Chapter", chapter.chapter, "*", as_dict=True
-            )
-            chapter_name = chapter_details.get("name")
-
-            # Check if chapter is already manually unlocked
-            progress = frappe.db.get_value(
-                "LMS Course Progress",
-                {"member": user_id, "course": course, "chapter": chapter_name},
-                ["manually_unlocked", "status"],
-                as_dict=True,
-            )
-
-            if progress and progress.manually_unlocked:
-                # Already manually unlocked - skip
-                continue
-
-            # Check if chapter is complete FOR THIS SPECIFIC USER (not current session user)
-            # Get lessons in this chapter
-            lessons = frappe.get_all(
-                "Lesson Reference",
-                filters={"parent": chapter_name},
-                fields=["lesson"],
-                pluck="lesson",
-            )
-
-            # Check completion for each lesson for THIS specific user
-            chapter_complete = True
-            if lessons:
-                for lesson in lessons:
-                    lesson_progress = frappe.db.get_value(
-                        "LMS Course Progress",
-                        {
-                            "course": course,
-                            "lesson": lesson,
-                            "member": user_id,  # Check for the EMPLOYEE, not session user
-                        },
-                        "status",
-                    )
-                    if lesson_progress != "Complete":
-                        chapter_complete = False
-                        break
-            else:
-                # If no lessons, check chapter-level progress (for SCORM)
-                chapter_progress = frappe.db.get_value(
-                    "LMS Course Progress",
-                    {
-                        "course": course,
-                        "chapter": chapter_name,
-                        "member": user_id,  # Check for the EMPLOYEE, not session user
-                    },
-                    "status",
-                )
-                chapter_complete = chapter_progress == "Complete"
-
-            # A chapter is unlockable if it's incomplete AND all previous chapters are complete.
-            # This identifies the FIRST incomplete chapter in the sequence, which is the chapter
-            # we actually flag with `manually_unlocked` (the "unlock target").
-            #
-            # Display vs. unlock target: because manually unlocking an incomplete chapter also
-            # opens the chapter immediately after it (the sequential-learning gate in
-            # `get_course_outline` treats a manually-unlocked chapter as satisfied for the next
-            # chapter), the student really gains access to that *following* chapter. So we show
-            # the NEXT chapter in the dropdown while keeping the unlock target as this chapter.
-            #
-            # If this is the LAST chapter there is no following chapter to grant access to, so
-            # unlocking it is pointless — we skip it. When that leaves no entries at all, the
-            # frontend shows "No locked chapters available to unlock".
-            if not chapter_complete and all_previous_complete and chapter_idx + 1 < len(chapters):
-                next_chapter = chapters[chapter_idx + 1]
-                display_idx = next_chapter.idx
-                display_title = (
-                    frappe.db.get_value("Course Chapter", next_chapter.chapter, "title")
-                    or chapter_details.get("title")
-                )
-
-                all_locked_chapters.append(
-                    {
-                        # Identity fields = the chapter that is actually unlocked (first incomplete).
-                        "chapter": chapter_name,
-                        "name": chapter_name,
-                        "course": course,
-                        "course_title": course_title,
-                        # Display fields = the NEXT chapter the student gains access to.
-                        "chapter_title": display_title,
-                        "title": display_title,
-                        "idx": display_idx,
-                        "display": f"{course_title} - {display_title}",
-                    }
-                )
-
-            if not chapter_complete:
-                all_previous_complete = False
 
     return all_locked_chapters
 
