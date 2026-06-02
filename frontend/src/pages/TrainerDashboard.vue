@@ -10,7 +10,17 @@
 					{ label: __('Employee Dashboard') },
 				]"
 			/>
-			<div class="flex gap-2">
+			<div class="flex gap-2 items-center">
+				<Button
+					variant="subtle"
+					:loading="dashboard.loading"
+					@click="dashboard.reload()"
+				>
+					<template #prefix>
+						<RotateCw class="size-4 stroke-1.5" />
+					</template>
+					{{ __('Refresh') }}
+				</Button>
 				<Button
 					variant="subtle"
 					@click="router.push({ name: 'Quizzes' })"
@@ -53,6 +63,42 @@
 					:placeholder="__('All Batches')"
 					class="w-48"
 				/>
+				<!--
+					Native <select> (not frappe-ui FormControl) is used for the course and
+					chapter filters on purpose: the chapter option values are Course Chapter
+					names containing spaces and parentheses (e.g. "0431 Module 2 (Quiz)"),
+					which the reka-ui-based Select mishandles so the v-model never updates.
+					A native select binds arbitrary string values reliably.
+				-->
+				<select
+					v-model="courseFilter"
+					:aria-label="__('Filter by course')"
+					class="w-48 rounded min-h-7 px-2 text-base text-ink-gray-7 border border-outline-gray-2 bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors outline-none focus:ring-2 ring-outline-gray-3"
+				>
+					<option value="">{{ __('All Courses') }}</option>
+					<option
+						v-for="c in courseList"
+						:key="c.name"
+						:value="c.name"
+					>
+						{{ c.title || c.name }}
+					</option>
+				</select>
+				<select
+					v-if="courseFilter"
+					v-model="chapterFilter"
+					:aria-label="__('Filter by chapter')"
+					class="w-48 rounded min-h-7 px-2 text-base text-ink-gray-7 border border-outline-gray-2 bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors outline-none focus:ring-2 ring-outline-gray-3"
+				>
+					<option value="">{{ __('All Chapters') }}</option>
+					<option
+						v-for="ch in chapterList"
+						:key="ch.name"
+						:value="ch.name"
+					>
+						{{ ch.title }}
+					</option>
+				</select>
 				<FormControl
 					type="select"
 					v-model="progressFilter"
@@ -131,16 +177,42 @@
 			<!-- Students Table -->
 			<div v-else class="border rounded-lg overflow-hidden">
 				<div
-					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9 flex items-center justify-between"
+					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9 flex items-center justify-between gap-3"
 				>
 					<span>{{ __('Students Progress') }}</span>
-					<span class="text-sm font-normal text-ink-gray-5">
-						{{ __('Showing {0} of {1}', [paginatedStudents.length, filteredStudents.length]) }}
-					</span>
+					<div class="flex items-center gap-3">
+						<!-- Bulk unlock: appears once a course + chapter filter is active -->
+						<div v-if="bulkUnlockMode && selectedMembers.size" class="flex items-center gap-2">
+							<span class="text-sm font-normal text-ink-gray-6">
+								{{ __('{0} selected', [selectedMembers.size]) }}
+							</span>
+							<Button
+								variant="solid"
+								theme="blue"
+								size="sm"
+								:loading="doBulkUnlock.loading"
+								@click="handleBulkUnlock"
+							>
+								{{ __('Unlock selected') }}
+							</Button>
+						</div>
+						<span class="text-sm font-normal text-ink-gray-5">
+							{{ __('Showing {0} of {1}', [paginatedStudents.length, filteredStudents.length]) }}
+						</span>
+					</div>
 				</div>
 				<table class="w-full">
 					<thead>
 						<tr class="border-b text-left text-sm text-ink-gray-5">
+							<th v-if="bulkUnlockMode" class="px-4 py-3 w-8">
+								<input
+									type="checkbox"
+									class="cursor-pointer align-middle"
+									:checked="allFilteredSelected"
+									@change="toggleSelectAll"
+									:aria-label="__('Select all filtered students')"
+								/>
+							</th>
 							<th class="px-4 py-3 w-8"></th>
 							<th class="px-4 py-3">{{ __('Student') }}</th>
 							<th class="px-4 py-3">{{ __('Batch') }}</th>
@@ -160,6 +232,15 @@
 								class="border-b hover:bg-surface-gray-1 cursor-pointer transition-colors"
 								@click="toggleStudent(student.member)"
 							>
+								<td v-if="bulkUnlockMode" class="px-4 py-3" @click.stop>
+									<input
+										type="checkbox"
+										class="cursor-pointer align-middle"
+										:checked="isSelected(student.member)"
+										@change="toggleSelect(student.member)"
+										:aria-label="__('Select student')"
+									/>
+								</td>
 								<td class="px-4 py-3">
 									<ChevronRight
 										class="size-4 text-ink-gray-4 transition-transform"
@@ -244,7 +325,7 @@
 							</tr>
 							<!-- Expanded: Course Details -->
 							<tr v-if="expandedStudent === student.member && student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
+								<td :colspan="(canManage ? 8 : 7) + (bulkUnlockMode ? 1 : 0)" class="p-0">
 									<div class="bg-surface-gray-1">
 										<div
 											v-for="enrollment in student.enrollments"
@@ -278,7 +359,7 @@
 								</td>
 							</tr>
 							<tr v-if="expandedStudent === student.member && !student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
+								<td :colspan="(canManage ? 8 : 7) + (bulkUnlockMode ? 1 : 0)" class="p-0">
 									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
 										{{ __('No course enrollments') }}
 									</div>
@@ -347,7 +428,7 @@
 						v-else
 						v-model="selectedChapterToUnlock"
 						type="select"
-						:options="chapterOptions"
+						:options="unlockChapterOptions"
 						:placeholder="__('Select Chapter')"
 					/>
 				</div>
@@ -380,7 +461,7 @@
 
 <script setup>
 import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, FormControl, Dialog, toast } from 'frappe-ui'
-import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3, X } from 'lucide-vue-next'
+import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3, X, RotateCw } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import dayjs from 'dayjs'
@@ -393,6 +474,8 @@ const expandedStudent = ref(null)
 const searchQuery = ref('')
 const batchFilter = ref('')
 const progressFilter = ref('')
+const courseFilter = ref('')
+const chapterFilter = ref('')
 const currentPage = ref(1)
 const perPage = ref(25)
 const showQuizModal = ref(false)
@@ -421,18 +504,31 @@ const toggleStudent = (member) => {
 }
 
 // Reset to page 1 when filters change
-watch([searchQuery, batchFilter, progressFilter], () => {
+watch([searchQuery, batchFilter, progressFilter, courseFilter, chapterFilter], () => {
 	currentPage.value = 1
 })
 
+// Chapters belong to a course, so reset the chapter filter when the course changes.
+watch(courseFilter, () => {
+	chapterFilter.value = ''
+})
+
 const hasActiveFilters = computed(() => {
-	return !!(searchQuery.value || batchFilter.value || progressFilter.value)
+	return !!(
+		searchQuery.value ||
+		batchFilter.value ||
+		progressFilter.value ||
+		courseFilter.value ||
+		chapterFilter.value
+	)
 })
 
 const clearFilters = () => {
 	searchQuery.value = ''
 	batchFilter.value = ''
 	progressFilter.value = ''
+	courseFilter.value = ''
+	chapterFilter.value = ''
 }
 
 const openStudentQuizAnalytics = (student) => {
@@ -455,6 +551,16 @@ const dashboard = createResource({
 	auto: true,
 })
 
+// Re-fetch the dashboard whenever the chapter filter changes — equivalent to clicking the
+// Refresh button right after picking a chapter. Reloading reassigns `dashboard.data`, which
+// forces the student list to recompute against the current chapter selection (and pulls the
+// latest unlock data on this live site). Guarded so it only runs after the initial load.
+watch(chapterFilter, () => {
+	if (dashboard.fetched) {
+		dashboard.reload()
+	}
+})
+
 // Computed: Batch options from data
 const batchOptions = computed(() => {
 	if (!dashboard.data?.batches) return []
@@ -465,6 +571,16 @@ const batchOptions = computed(() => {
 			value: b.name  // Use batch ID instead of title
 		}))
 	]
+})
+
+// Courses present in the dashboard (only those with an actionable "Unlock Chapter" entry).
+const courseList = computed(() => dashboard.data?.courses || [])
+
+// Chapters offered for unlocking in the selected course, ordered by position.
+const chapterList = computed(() => {
+	const course = dashboard.data?.courses?.find(c => c.name === courseFilter.value)
+	if (!course) return []
+	return [...course.chapters].sort((a, b) => a.idx - b.idx)
 })
 
 // Computed: All students across all batches
@@ -486,11 +602,20 @@ const allStudents = computed(() => {
 
 // Computed: Filtered students
 const filteredStudents = computed(() => {
+	// Read every filter ref unconditionally up front so they are ALL registered as reactive
+	// dependencies of this computed. (chapterFilter in particular is only used deep inside a
+	// conditional below; reading it only there means Vue may not track it, so changing the
+	// chapter would not trigger a recompute — the bug that required a manual Refresh.)
+	const query = searchQuery.value.toLowerCase()
+	const batch = batchFilter.value
+	const progress = progressFilter.value
+	const course = courseFilter.value
+	const chapter = chapterFilter.value
+
 	let filtered = allStudents.value
 
 	// Search filter
-	if (searchQuery.value) {
-		const query = searchQuery.value.toLowerCase()
+	if (query) {
 		filtered = filtered.filter(s =>
 			s.member_name?.toLowerCase().includes(query) ||
 			s.member?.toLowerCase().includes(query) ||
@@ -499,16 +624,29 @@ const filteredStudents = computed(() => {
 	}
 
 	// Batch filter
-	if (batchFilter.value) {
-		filtered = filtered.filter(s => s.batch_title === batchFilter.value)
+	if (batch) {
+		filtered = filtered.filter(s => s.batch_title === batch)
 	}
 
 	// Progress filter
-	if (progressFilter.value) {
-		const [min, max] = progressFilter.value.split('-').map(Number)
+	if (progress) {
+		const [min, max] = progress.split('-').map(Number)
 		filtered = filtered.filter(s => {
-			const progress = s.avg_progress || 0
-			return progress >= min && progress <= max
+			const value = s.avg_progress || 0
+			return value >= min && value <= max
+		})
+	}
+
+	// Course filter (+ dependent chapter filter), driven by the "Unlock Chapter" action
+	// button: an employee matches only when the selected course (and chapter) is one they
+	// can currently be offered to unlock.
+	if (course) {
+		filtered = filtered.filter(s => {
+			const enrollment = s.enrollments?.find(en => en.course === course)
+			const actionable = enrollment?.actionable_chapters || []
+			if (!actionable.length) return false
+			if (!chapter) return true
+			return actionable.includes(chapter)
 		})
 	}
 
@@ -563,7 +701,7 @@ const doUnlockChapter = createResource({
 	url: 'lms.lms.custom.dashboard_api.unlock_chapter_for_employee',
 })
 
-const chapterOptions = computed(() => {
+const unlockChapterOptions = computed(() => {
 	if (!lockedChapters.data) return []
 	return lockedChapters.data.map(chapter => ({
 		label: chapter.display,
@@ -571,16 +709,34 @@ const chapterOptions = computed(() => {
 	}))
 })
 
-const openUnlockChapterModal = (student) => {
+const openUnlockChapterModal = async (student) => {
 	selectedStudentForUnlock.value = student
 	selectedChapterToUnlock.value = ''
 	showUnlockChapterModal.value = true
 
 	// Fetch locked chapters for this student in their batch
-	lockedChapters.submit({
+	await lockedChapters.submit({
 		employee: student.member,
 		batch: student.batch_name,
 	})
+
+	// If a course + chapter filter is active, pre-select that exact chapter in the modal so
+	// the chapter offered for unlocking matches what the user filtered by. The filter value
+	// is the display chapter (the next chapter shown in the button); we map it back to the
+	// option whose value carries the actual unlock-target chapter.
+	if (courseFilter.value && chapterFilter.value && lockedChapters.data) {
+		const match = lockedChapters.data.find(
+			(c) =>
+				c.course === courseFilter.value &&
+				c.display_chapter === chapterFilter.value
+		)
+		if (match) {
+			selectedChapterToUnlock.value = JSON.stringify({
+				course: match.course,
+				chapter: match.chapter,
+			})
+		}
+	}
 }
 
 const handleUnlockChapter = async () => {
@@ -605,6 +761,75 @@ const handleUnlockChapter = async () => {
 		dashboard.reload()
 	} catch (err) {
 		toast.error(err.messages?.[0] || __('Failed to unlock chapter'))
+	}
+}
+
+// ─── Bulk Unlock (select rows after a chapter filter is applied) ─────────────
+const canManage = computed(
+	() => user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr
+)
+// Bulk unlock only makes sense once a course + chapter are picked — that pins the target
+// chapter the same way the per-row "Unlock Chapter" button does.
+const bulkUnlockMode = computed(
+	() => canManage.value && !!courseFilter.value && !!chapterFilter.value
+)
+
+const selectedMembers = ref(new Set())
+const isSelected = (member) => selectedMembers.value.has(member)
+const toggleSelect = (member) => {
+	const next = new Set(selectedMembers.value)
+	next.has(member) ? next.delete(member) : next.add(member)
+	selectedMembers.value = next
+}
+const allFilteredSelected = computed(
+	() =>
+		filteredStudents.value.length > 0 &&
+		filteredStudents.value.every((s) => selectedMembers.value.has(s.member))
+)
+const toggleSelectAll = () => {
+	selectedMembers.value = allFilteredSelected.value
+		? new Set()
+		: new Set(filteredStudents.value.map((s) => s.member))
+}
+// Drop the selection whenever the filtered set changes, so a stale tick can't be acted on.
+watch([searchQuery, batchFilter, progressFilter, courseFilter, chapterFilter], () => {
+	selectedMembers.value = new Set()
+})
+
+const doBulkUnlock = createResource({
+	url: 'lms.lms.custom.dashboard_api.bulk_unlock_chapter',
+})
+
+const handleBulkUnlock = async () => {
+	// Pass the chapter FILTER value (a display_chapter); the server resolves each
+	// employee's real unlock target with the same logic as the per-row button.
+	const members = filteredStudents.value
+		.map((s) => s.member)
+		.filter((m) => selectedMembers.value.has(m))
+	if (!members.length) {
+		toast.error(__('Select at least one student'))
+		return
+	}
+	try {
+		await doBulkUnlock.submit({
+			employees: JSON.stringify(members),
+			course: courseFilter.value,
+			display_chapter: chapterFilter.value,
+		})
+		const counts = doBulkUnlock.data?.counts || {}
+		const skipped =
+			(counts.not_offered || 0) + (counts.not_enrolled || 0) + (counts.errors || 0)
+		toast.success(
+			__('Unlocked {0}, already unlocked {1}, skipped {2}', [
+				counts.unlocked || 0,
+				counts.already_unlocked || 0,
+				skipped,
+			])
+		)
+		selectedMembers.value = new Set()
+		dashboard.reload()
+	} catch (err) {
+		toast.error(err.messages?.[0] || __('Bulk unlock failed'))
 	}
 }
 </script>
