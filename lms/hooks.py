@@ -144,6 +144,7 @@ scheduler_events = {
         "lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
         "lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
         "lms.lms.custom.notifications.check_student_progress_alerts",
+        "lms.lms.custom.notifications.check_course_deadline_reminders",
     ],
 }
 

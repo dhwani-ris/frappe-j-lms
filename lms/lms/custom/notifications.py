@@ -1,5 +1,15 @@
 import frappe
-from frappe.utils import cint
+from frappe.utils import add_days, cint, date_diff, format_date, getdate, today
+
+# Role profile that identifies a Master Trainer (set on the User while creating
+# an employee at /lms/employees). Master Trainers are org-wide, so every enabled
+# user carrying this role profile is notified about an at-risk assignment.
+MASTER_TRAINER_ROLE_PROFILE = "Jamboree Master Trainer"
+
+# An assignment is "near its deadline" when the batch end_date is this many days
+# away (or fewer). With a daily scheduler this yields a reminder on each of the
+# final 3 days before the deadline (2 days left, 1 day left, due today).
+DEADLINE_REMINDER_WINDOW_DAYS = 2
 
 
 def check_student_progress_alerts():
@@ -131,3 +141,166 @@ def notify_on_course_completion(doc, method):
 			notification.document_type = "LMS Enrollment"
 			notification.document_name = doc.name
 			notification.save(ignore_permissions=True)
+
+
+def check_course_deadline_reminders():
+	"""Daily scheduled task: remind stakeholders about courses that are about to
+	miss their deadline.
+
+	For every batch whose ``end_date`` is 0, 1 or 2 days away, and for every
+	(enrolled employee, course) pair in that batch where the course is **not yet
+	completed** (``LMS Enrollment.progress < 100``), send both an in-app
+	notification and an email to:
+
+	* the **employee** (student) themselves,
+	* the **trainer(s)** of that course — the instructors on the batch,
+	* the **master trainer(s)** — users with the ``Jamboree Master Trainer``
+	  role profile, and
+	* the employee's **manager** — resolved via ``Employee.reports_to``.
+
+	Because the job runs daily and the window is inclusive, an incomplete
+	assignment is reminded once per day on each of the final three days before
+	the deadline (escalating urgency: "2 days left" -> "tomorrow" -> "today").
+	"""
+	today_date = getdate(today())
+	window_end = add_days(today_date, DEADLINE_REMINDER_WINDOW_DAYS)
+
+	# Only batches whose deadline lands in the next 0..2 days (inclusive).
+	batches = frappe.get_all(
+		"LMS Batch",
+		filters={"end_date": ["between", [today_date, window_end]]},
+		fields=["name", "end_date"],
+	)
+	if not batches:
+		return
+
+	# Master trainers are org-wide: every enabled user carrying the role profile.
+	master_trainers = frappe.get_all(
+		"User",
+		filters={"role_profile_name": MASTER_TRAINER_ROLE_PROFILE, "enabled": 1},
+		pluck="name",
+	)
+
+	for batch in batches:
+		days_left = date_diff(batch.end_date, today_date)
+
+		courses = frappe.get_all(
+			"Batch Course",
+			{"parent": batch.name, "parenttype": "LMS Batch"},
+			pluck="course",
+		)
+		members = frappe.get_all(
+			"LMS Batch Enrollment", {"batch": batch.name}, pluck="member"
+		)
+		if not courses or not members:
+			continue
+
+		# Trainers for this assignment = the batch instructors.
+		trainers = frappe.get_all(
+			"Course Instructor",
+			{"parent": batch.name, "parenttype": "LMS Batch"},
+			pluck="instructor",
+		)
+
+		for member in members:
+			for course in courses:
+				progress = (
+					frappe.db.get_value(
+						"LMS Enrollment",
+						{"member": member, "course": course},
+						"progress",
+					)
+					or 0
+				)
+				if cint(progress) >= 100:
+					continue  # already completed — no reminder needed
+
+				_send_deadline_reminders(
+					member=member,
+					course=course,
+					end_date=batch.end_date,
+					days_left=days_left,
+					trainers=trainers,
+					master_trainers=master_trainers,
+				)
+
+
+def _send_deadline_reminders(member, course, end_date, days_left, trainers, master_trainers):
+	"""Build the messages and fan them out to the student + all stakeholders."""
+	student_name = frappe.db.get_value("User", member, "full_name") or member
+	course_title = frappe.db.get_value("LMS Course", course, "title") or course
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment", {"member": member, "course": course}, "name"
+	)
+	deadline = format_date(end_date)
+
+	# Human-friendly phrasing for subject + body.
+	if days_left <= 0:
+		when = "today"
+		remaining = "the deadline is today"
+	elif days_left == 1:
+		when = "tomorrow"
+		remaining = "1 day remaining"
+	else:
+		when = f"in {days_left} days"
+		remaining = f"{days_left} days remaining"
+
+	# Resolve the employee's manager via the HR reporting line.
+	manager_user = None
+	employee = frappe.db.get_value(
+		"Employee",
+		{"user_id": member, "status": "Active"},
+		["reports_to"],
+		as_dict=True,
+	)
+	if employee and employee.reports_to:
+		manager_user = frappe.db.get_value("Employee", employee.reports_to, "user_id")
+
+	# 1) Notify the student (first person).
+	student_subject = f"Reminder: '{course_title}' is due {when}"
+	student_message = (
+		f"You have not yet completed the course <strong>{course_title}</strong>. "
+		f"The deadline is <strong>{deadline}</strong> ({remaining}). "
+		f"Please complete it before the due date."
+	)
+	_notify(member, member, student_subject, student_message, enrollment)
+
+	# 2) Notify the stakeholders (third person), de-duplicated and excluding the
+	#    student (who was already notified with a personalised message).
+	stakeholders = set(filter(None, list(trainers) + list(master_trainers) + [manager_user]))
+	stakeholders.discard(member)
+
+	stake_subject = f"Reminder: {student_name} has not completed '{course_title}' (due {when})"
+	stake_message = (
+		f"<strong>{student_name}</strong> has not yet completed the course "
+		f"<strong>{course_title}</strong>. The deadline is <strong>{deadline}</strong> "
+		f"({remaining})."
+	)
+	for recipient in stakeholders:
+		_notify(recipient, member, stake_subject, stake_message, enrollment)
+
+
+def _notify(recipient, from_user, subject, message, enrollment_name):
+	"""Create an in-app Notification Log entry and send an email to one recipient."""
+	notification = frappe.new_doc("Notification Log")
+	notification.for_user = recipient
+	notification.from_user = from_user
+	notification.type = "Alert"
+	notification.subject = subject
+	notification.email_content = message
+	if enrollment_name:
+		notification.document_type = "LMS Enrollment"
+		notification.document_name = enrollment_name
+	notification.save(ignore_permissions=True)
+
+	try:
+		frappe.sendmail(
+			recipients=[recipient],
+			subject=subject,
+			message=message,
+			reference_doctype="LMS Enrollment" if enrollment_name else None,
+			reference_name=enrollment_name,
+		)
+	except Exception:
+		# Never let a single failed email abort the whole daily run.
+		frappe.log_error(title="Course deadline reminder email failed")
