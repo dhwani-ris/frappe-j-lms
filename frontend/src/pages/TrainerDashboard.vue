@@ -177,16 +177,42 @@
 			<!-- Students Table -->
 			<div v-else class="border rounded-lg overflow-hidden">
 				<div
-					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9 flex items-center justify-between"
+					class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9 flex items-center justify-between gap-3"
 				>
 					<span>{{ __('Students Progress') }}</span>
-					<span class="text-sm font-normal text-ink-gray-5">
-						{{ __('Showing {0} of {1}', [paginatedStudents.length, filteredStudents.length]) }}
-					</span>
+					<div class="flex items-center gap-3">
+						<!-- Bulk unlock: appears once a course + chapter filter is active -->
+						<div v-if="bulkUnlockMode && selectedMembers.size" class="flex items-center gap-2">
+							<span class="text-sm font-normal text-ink-gray-6">
+								{{ __('{0} selected', [selectedMembers.size]) }}
+							</span>
+							<Button
+								variant="solid"
+								theme="blue"
+								size="sm"
+								:loading="doBulkUnlock.loading"
+								@click="handleBulkUnlock"
+							>
+								{{ __('Unlock selected') }}
+							</Button>
+						</div>
+						<span class="text-sm font-normal text-ink-gray-5">
+							{{ __('Showing {0} of {1}', [paginatedStudents.length, filteredStudents.length]) }}
+						</span>
+					</div>
 				</div>
 				<table class="w-full">
 					<thead>
 						<tr class="border-b text-left text-sm text-ink-gray-5">
+							<th v-if="bulkUnlockMode" class="px-4 py-3 w-8">
+								<input
+									type="checkbox"
+									class="cursor-pointer align-middle"
+									:checked="allFilteredSelected"
+									@change="toggleSelectAll"
+									:aria-label="__('Select all filtered students')"
+								/>
+							</th>
 							<th class="px-4 py-3 w-8"></th>
 							<th class="px-4 py-3">{{ __('Student') }}</th>
 							<th class="px-4 py-3">{{ __('Batch') }}</th>
@@ -206,6 +232,15 @@
 								class="border-b hover:bg-surface-gray-1 cursor-pointer transition-colors"
 								@click="toggleStudent(student.member)"
 							>
+								<td v-if="bulkUnlockMode" class="px-4 py-3" @click.stop>
+									<input
+										type="checkbox"
+										class="cursor-pointer align-middle"
+										:checked="isSelected(student.member)"
+										@change="toggleSelect(student.member)"
+										:aria-label="__('Select student')"
+									/>
+								</td>
 								<td class="px-4 py-3">
 									<ChevronRight
 										class="size-4 text-ink-gray-4 transition-transform"
@@ -290,7 +325,7 @@
 							</tr>
 							<!-- Expanded: Course Details -->
 							<tr v-if="expandedStudent === student.member && student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
+								<td :colspan="(canManage ? 8 : 7) + (bulkUnlockMode ? 1 : 0)" class="p-0">
 									<div class="bg-surface-gray-1">
 										<div
 											v-for="enrollment in student.enrollments"
@@ -324,7 +359,7 @@
 								</td>
 							</tr>
 							<tr v-if="expandedStudent === student.member && !student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
+								<td :colspan="(canManage ? 8 : 7) + (bulkUnlockMode ? 1 : 0)" class="p-0">
 									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
 										{{ __('No course enrollments') }}
 									</div>
@@ -726,6 +761,75 @@ const handleUnlockChapter = async () => {
 		dashboard.reload()
 	} catch (err) {
 		toast.error(err.messages?.[0] || __('Failed to unlock chapter'))
+	}
+}
+
+// ─── Bulk Unlock (select rows after a chapter filter is applied) ─────────────
+const canManage = computed(
+	() => user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr
+)
+// Bulk unlock only makes sense once a course + chapter are picked — that pins the target
+// chapter the same way the per-row "Unlock Chapter" button does.
+const bulkUnlockMode = computed(
+	() => canManage.value && !!courseFilter.value && !!chapterFilter.value
+)
+
+const selectedMembers = ref(new Set())
+const isSelected = (member) => selectedMembers.value.has(member)
+const toggleSelect = (member) => {
+	const next = new Set(selectedMembers.value)
+	next.has(member) ? next.delete(member) : next.add(member)
+	selectedMembers.value = next
+}
+const allFilteredSelected = computed(
+	() =>
+		filteredStudents.value.length > 0 &&
+		filteredStudents.value.every((s) => selectedMembers.value.has(s.member))
+)
+const toggleSelectAll = () => {
+	selectedMembers.value = allFilteredSelected.value
+		? new Set()
+		: new Set(filteredStudents.value.map((s) => s.member))
+}
+// Drop the selection whenever the filtered set changes, so a stale tick can't be acted on.
+watch([searchQuery, batchFilter, progressFilter, courseFilter, chapterFilter], () => {
+	selectedMembers.value = new Set()
+})
+
+const doBulkUnlock = createResource({
+	url: 'lms.lms.custom.dashboard_api.bulk_unlock_chapter',
+})
+
+const handleBulkUnlock = async () => {
+	// Pass the chapter FILTER value (a display_chapter); the server resolves each
+	// employee's real unlock target with the same logic as the per-row button.
+	const members = filteredStudents.value
+		.map((s) => s.member)
+		.filter((m) => selectedMembers.value.has(m))
+	if (!members.length) {
+		toast.error(__('Select at least one student'))
+		return
+	}
+	try {
+		await doBulkUnlock.submit({
+			employees: JSON.stringify(members),
+			course: courseFilter.value,
+			display_chapter: chapterFilter.value,
+		})
+		const counts = doBulkUnlock.data?.counts || {}
+		const skipped =
+			(counts.not_offered || 0) + (counts.not_enrolled || 0) + (counts.errors || 0)
+		toast.success(
+			__('Unlocked {0}, already unlocked {1}, skipped {2}', [
+				counts.unlocked || 0,
+				counts.already_unlocked || 0,
+				skipped,
+			])
+		)
+		selectedMembers.value = new Set()
+		dashboard.reload()
+	} catch (err) {
+		toast.error(err.messages?.[0] || __('Bulk unlock failed'))
 	}
 }
 </script>

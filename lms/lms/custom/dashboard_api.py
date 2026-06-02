@@ -1693,55 +1693,53 @@ def get_locked_chapters_for_employee(employee, batch):
     return all_locked_chapters
 
 
-@frappe.whitelist()
-def unlock_chapter_for_employee(employee, course, chapter):
-    """Master Trainer: Manually unlock a specific chapter for an employee
+def _resolve_employee_user(employee, throw=True):
+    """Resolve an Employee ID (or user email) to a user id.
 
-    Args:
-        employee: Employee ID or user email
-        course: Course name
-        chapter: Chapter name
+    Returns the user id, or ``None`` when the employee has no linked user and
+    ``throw`` is False. With ``throw`` True (single-unlock behaviour) it raises.
     """
-    frappe.only_for(["LMS Master Trainer", "LMS HR", "System Manager"])
+    if employee and "@" in employee:
+        return employee  # already a user email
+    user_id = frappe.db.get_value("Employee", employee, "user_id")
+    if not user_id and throw:
+        frappe.throw(_("Employee has no linked user account"))
+    return user_id
 
-    # Check if employee is an email (user) or Employee ID
-    if "@" in employee:
-        # It's a user email
-        user_id = employee
-    else:
-        # It's an Employee ID - get user_id
-        user_id = frappe.db.get_value("Employee", employee, "user_id")
-        if not user_id:
-            frappe.throw("Employee has no linked user account")
 
-    # Check if user is enrolled
-    enrollment = frappe.db.exists(
-        "LMS Enrollment", {"member": user_id, "course": course}
-    )
-    if not enrollment:
-        frappe.throw(f"Employee is not enrolled in this course")
+def _unlock_chapter(user_id, course, chapter):
+    """Core unlock for one (member, course, chapter): set ``manually_unlocked``.
 
-    # Get chapter title
-    chapter_title = frappe.db.get_value("Course Chapter", chapter, "title")
-    if not chapter_title:
-        frappe.throw("Chapter not found")
+    No permission check and no commit — callers own those (so a bulk caller checks
+    permission once and commits once). Returns a status string:
 
-    # Check/create LMS Course Progress record
+    * ``"not_enrolled"``     – member isn't enrolled in the course (caller decides)
+    * ``"already_unlocked"`` – chapter was already manually unlocked (no-op)
+    * ``"unlocked"``         – the chapter was just unlocked
+
+    Identical write semantics to the original single-unlock path, so the bulk
+    feature inherits the existing course-structure-lock behaviour unchanged.
+    """
+    if not frappe.db.exists("LMS Enrollment", {"member": user_id, "course": course}):
+        return "not_enrolled"
+
     progress = frappe.db.get_value(
         "LMS Course Progress",
         {"member": user_id, "course": course, "chapter": chapter},
-        "name",
+        ["name", "manually_unlocked"],
+        as_dict=True,
     )
 
+    if progress and progress.manually_unlocked:
+        return "already_unlocked"  # idempotent: skip needless writes
+
     if progress:
-        # Update existing record
-        progress_doc = frappe.get_doc("LMS Course Progress", progress)
+        progress_doc = frappe.get_doc("LMS Course Progress", progress.name)
         progress_doc.manually_unlocked = 1
         progress_doc.unlocked_by = frappe.session.user
         progress_doc.unlock_date = frappe.utils.now()
         progress_doc.save(ignore_permissions=True)
     else:
-        # Create new progress record
         progress_doc = frappe.get_doc(
             {
                 "doctype": "LMS Course Progress",
@@ -1756,7 +1754,31 @@ def unlock_chapter_for_employee(employee, course, chapter):
         )
         progress_doc.insert(ignore_permissions=True)
 
-    frappe.db.commit()
+    return "unlocked"
+
+
+@frappe.whitelist()
+def unlock_chapter_for_employee(employee, course, chapter):
+    """Master Trainer: Manually unlock a specific chapter for an employee
+
+    Args:
+        employee: Employee ID or user email
+        course: Course name
+        chapter: Chapter name
+    """
+    frappe.only_for(["LMS Master Trainer", "LMS HR", "System Manager"])
+
+    user_id = _resolve_employee_user(employee)
+
+    chapter_title = frappe.db.get_value("Course Chapter", chapter, "title")
+    if not chapter_title:
+        frappe.throw(_("Chapter not found"))
+
+    status = _unlock_chapter(user_id, course, chapter)
+    if status == "not_enrolled":
+        frappe.throw(_("Employee is not enrolled in this course"))
+
+    frappe.db.commit()  # nosemgrep
 
     return {
         "success": True,
@@ -1764,3 +1786,80 @@ def unlock_chapter_for_employee(employee, course, chapter):
         "chapter": chapter,
         "chapter_title": chapter_title,
     }
+
+
+@frappe.whitelist()
+def bulk_unlock_chapter(employees, course, display_chapter):
+    """Master Trainer: unlock a filtered chapter for many employees in one action.
+
+    Backs the trainer dashboard's "Unlock selected" bulk action. ``display_chapter`` is
+    the dashboard's chapter-filter value — i.e. the *next* chapter shown on the action
+    button (see ``_get_unlockable_chapters``), NOT the actual unlock target. For each
+    employee we resolve their real unlock target with the same single source of truth
+    the per-employee button uses (``_get_unlockable_chapters``), then run the identical
+    single-unlock write path. So bulk == repeating the button for each selected employee
+    — but with one permission check, one commit, and per-employee outcome reporting.
+
+    Args:
+        employees: list of Employee IDs / user emails (JSON string or list).
+        course: Course name.
+        display_chapter: the chapter-filter value (a ``display_chapter`` / next chapter).
+
+    Returns a summary: employees bucketed by outcome, plus ``counts`` and chapter info.
+    """
+    frappe.only_for(["LMS Master Trainer", "LMS HR", "System Manager"])
+
+    if isinstance(employees, str):
+        employees = frappe.parse_json(employees)
+    if not employees:
+        frappe.throw(_("No employees selected."))
+
+    course_title = frappe.db.get_value("LMS Course", course, "title")
+    if not course_title:
+        frappe.throw(_("Course not found"))
+
+    # Resolve the course's chapter structure once; member progress is read per employee
+    # inside _get_unlockable_chapters (one query each) — fine for the filtered cohort size.
+    chapter_cache, sequential_cache = {}, {}
+    course_chapters = _get_course_chapter_structure(course, chapter_cache)
+
+    summary = {
+        "unlocked": [],
+        "already_unlocked": [],
+        "not_enrolled": [],
+        "not_offered": [],  # chapter is no longer actionable for this employee (e.g. progressed)
+        "errors": [],
+    }
+    seen = set()
+    for employee in employees:
+        if employee in seen:
+            continue
+        seen.add(employee)
+        try:
+            user_id = _resolve_employee_user(employee, throw=False)
+            if not user_id:
+                summary["errors"].append({"employee": employee, "reason": "No linked user account"})
+                continue
+
+            unlockable = _get_unlockable_chapters(
+                course, user_id, course_chapters, course_title, sequential_cache
+            )
+            match = next(
+                (u for u in unlockable if u["display_chapter"] == display_chapter), None
+            )
+            if not match:
+                summary["not_offered"].append(employee)
+                continue
+
+            status = _unlock_chapter(user_id, course, match["chapter"])
+            summary[status].append(employee)
+        except Exception as exc:
+            frappe.log_error(title="bulk_unlock_chapter failed for one employee")
+            summary["errors"].append({"employee": employee, "reason": str(exc)})
+
+    frappe.db.commit()  # nosemgrep
+
+    summary["counts"] = {key: len(val) for key, val in summary.items() if isinstance(val, list)}
+    summary["course"] = course
+    summary["display_chapter"] = display_chapter
+    return summary
