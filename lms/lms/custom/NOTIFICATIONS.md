@@ -11,6 +11,7 @@ sends an **email**.
 | Course completed | `LMS Enrollment` `on_update` (progress = 100) | Instructors + manager |
 | Student behind | Daily — `check_student_progress_alerts` | Manager (`reports_to`) |
 | **Course deadline approaching** | Daily — `check_course_deadline_reminders` | **Student + trainers + master trainers + manager** |
+| **Employee exit / access revoked** | `Employee` `on_update` (status change), `User` `on_update` (disabled), role-profile removal | **HR + manager + master trainers** |
 
 ---
 
@@ -82,4 +83,81 @@ Run them with:
 
 ```bash
 bench --site <site> run-tests --module lms.lms.custom.test_course_deadline_reminders
+```
+
+---
+
+## Employee exit / access revocation notification
+
+**Functions:** `notify_on_employee_exit()`, `notify_on_user_disabled()`,
+`notify_lms_access_revoked()` · **Trigger:** event-driven (`doc_events`), not scheduled.
+
+### What it does
+
+Whenever an employee **leaves the organisation** or their **LMS access is
+revoked**, an **in-app notification and an email** are sent to three parties:
+
+| Recipient | How it is resolved |
+|---|---|
+| **HR** | All enabled users carrying the `LMS HR` **role** (covers both the `Jamboree HR` role profile and directly-granted roles; Administrator excluded). |
+| **Immediate manager** | `Employee.reports_to` of the employee → that manager's `user_id` (skipped if the manager's account is disabled). |
+| **Master trainer(s)** | All enabled users whose **role profile** is `Jamboree Master Trainer`. Org-wide. |
+
+The exiting employee is **never** notified about their own exit, and recipients
+are de-duplicated.
+
+### When it fires
+
+All paths through which an exit / revocation can happen are covered:
+
+| Path | Hook | Message |
+|---|---|---|
+| `Employee.status` → **Left** (HR *Deactivate* with "Left", or a direct desk edit) | `Employee` `on_update` | *"Employee Exit: … has left the organization"* (includes the relieving date) |
+| `Employee.status` → **Inactive** / **Suspended** | `Employee` `on_update` | *"Access Revoked: LMS access for … has been revoked"* |
+| Linked **User disabled directly** (desk User form) | `User` `on_update` | *"Access Revoked …"* (reason: account disabled) |
+| **LMS role profile removed** (`dashboard_api.unassign_employee_role`) | direct call to `notify_lms_access_revoked()` | *"Access Revoked …"* (reason: role profile removed) |
+
+Notifications fire only on a real **status transition** — unrelated employee
+edits produce nothing. Double-notification is prevented:
+
+- HR's *Deactivate* action (`dashboard_api.deactivate_employee`) updates the
+  Employee **and** disables the User via `db.set_value` (which fires no User
+  hook) — only the Employee transition notifies.
+- Disabling the User of an employee who is **not Active** is skipped — the
+  Employee status transition already covered it.
+- Reactivation (`reactivate_employee`, status → Active) sends nothing.
+
+### Configuration knobs
+
+At the top of `notifications.py`:
+
+- `HR_ROLE = "LMS HR"` — the role that identifies HR recipients.
+- `MASTER_TRAINER_ROLE_PROFILE = "Jamboree Master Trainer"` — shared with the
+  deadline reminder.
+- `ACCESS_REVOKED_STATUSES = ("Inactive", "Suspended")` — Employee statuses
+  treated as access revocation (vs. `Left` = exit).
+
+### Operational notes
+
+- New `doc_events` entries (`Employee` `on_update`, second `User` `on_update`
+  handler) require a cache clear to take effect on a running site:
+  `bench --site <site> clear-cache` (a restart/migrate also does it).
+- Notification Log entries reference the **Employee** document; emails carry the
+  same reference. Email failures are caught and logged, never aborting the save.
+
+### Tests
+
+`test_employee_exit_notifications.py` covers:
+
+1. status → Left notifies HR + manager + master trainer (in-app + email), never the leaver;
+2. status → Inactive sends the "Access Revoked" variant;
+3. unrelated employee edits send nothing;
+4. disabling the linked User directly sends "Access Revoked";
+5. disabling the User of an already-exited employee does **not** double-notify;
+6. removing the LMS role profile sends "Access Revoked".
+
+Run them with:
+
+```bash
+bench --site <site> run-tests --module lms.lms.custom.test_employee_exit_notifications
 ```

@@ -1,15 +1,25 @@
 import frappe
 from frappe.utils import add_days, cint, date_diff, format_date, getdate, today
+from frappe.utils.user import get_users_with_role
 
 # Role profile that identifies a Master Trainer (set on the User while creating
 # an employee at /lms/employees). Master Trainers are org-wide, so every enabled
 # user carrying this role profile is notified about an at-risk assignment.
 MASTER_TRAINER_ROLE_PROFILE = "Jamboree Master Trainer"
 
+# Role that identifies HR. Querying by role (rather than role profile) also
+# catches users who were granted "LMS HR" directly, without the Jamboree HR
+# role profile.
+HR_ROLE = "LMS HR"
+
 # An assignment is "near its deadline" when the batch end_date is this many days
 # away (or fewer). With a daily scheduler this yields a reminder on each of the
 # final 3 days before the deadline (2 days left, 1 day left, due today).
 DEADLINE_REMINDER_WINDOW_DAYS = 2
+
+# Employee.status values that mean "this person no longer has LMS access" but
+# has not (necessarily) left the organisation.
+ACCESS_REVOKED_STATUSES = ("Inactive", "Suspended")
 
 
 def check_student_progress_alerts():
@@ -175,11 +185,7 @@ def check_course_deadline_reminders():
 		return
 
 	# Master trainers are org-wide: every enabled user carrying the role profile.
-	master_trainers = frappe.get_all(
-		"User",
-		filters={"role_profile_name": MASTER_TRAINER_ROLE_PROFILE, "enabled": 1},
-		pluck="name",
-	)
+	master_trainers = _get_master_trainers()
 
 	for batch in batches:
 		days_left = date_diff(batch.end_date, today_date)
@@ -263,7 +269,7 @@ def _send_deadline_reminders(member, course, end_date, days_left, trainers, mast
 		f"The deadline is <strong>{deadline}</strong> ({remaining}). "
 		f"Please complete it before the due date."
 	)
-	_notify(member, member, student_subject, student_message, enrollment)
+	_notify(member, member, student_subject, student_message, "LMS Enrollment", enrollment)
 
 	# 2) Notify the stakeholders (third person), de-duplicated and excluding the
 	#    student (who was already notified with a personalised message).
@@ -277,10 +283,129 @@ def _send_deadline_reminders(member, course, end_date, days_left, trainers, mast
 		f"({remaining})."
 	)
 	for recipient in stakeholders:
-		_notify(recipient, member, stake_subject, stake_message, enrollment)
+		_notify(recipient, member, stake_subject, stake_message, "LMS Enrollment", enrollment)
 
 
-def _notify(recipient, from_user, subject, message, enrollment_name):
+def notify_on_employee_exit(doc, method=None):
+	"""``Employee`` ``on_update`` hook: notify HR, the immediate manager and the
+	master trainer(s) when an employee leaves the organisation or their LMS
+	access is revoked.
+
+	Fires on a **status transition** only (no spam on unrelated edits):
+
+	* ``-> Left`` — the employee has exited the organisation.
+	* ``-> Inactive`` / ``-> Suspended`` — the employee's LMS access has been
+	  revoked (this is what HR's *Deactivate* action at /lms/employees sets;
+	  it also disables the linked User account).
+	"""
+	prev = doc.get_doc_before_save()
+	if not prev or prev.status == doc.status:
+		return
+
+	if doc.status == "Left":
+		_send_exit_notifications(doc, event="exit")
+	elif doc.status in ACCESS_REVOKED_STATUSES:
+		_send_exit_notifications(doc, event="revoked")
+
+
+def notify_on_user_disabled(doc, method=None):
+	"""``User`` ``on_update`` hook: notify stakeholders when a user account is
+	disabled directly (e.g. from the desk User form) — that, too, revokes LMS
+	access.
+
+	Skipped when the linked Employee is no longer Active: in that case the
+	Employee status transition (``notify_on_employee_exit``) already covers the
+	event. The HR *Deactivate* action disables the User via ``db.set_value``
+	(which does not fire this hook) after updating the Employee, so the two
+	paths never double-notify.
+	"""
+	prev = doc.get_doc_before_save()
+	if not prev or cint(doc.enabled) or not cint(prev.enabled):
+		return  # not a 1 -> 0 transition
+
+	employee = frappe.db.get_value(
+		"Employee",
+		{"user_id": doc.name},
+		["name", "employee_name", "user_id", "reports_to", "relieving_date", "status"],
+		as_dict=True,
+	)
+	if not employee or employee.status != "Active":
+		return
+
+	_send_exit_notifications(
+		employee, event="revoked", reason="Their user account was disabled."
+	)
+
+
+def notify_lms_access_revoked(employee_name, reason=None):
+	"""Notify stakeholders that an employee's LMS access was revoked outside a
+	status change — e.g. when HR removes the LMS role profile from the user
+	(``dashboard_api.unassign_employee_role``)."""
+	employee = frappe.db.get_value(
+		"Employee",
+		employee_name,
+		["name", "employee_name", "user_id", "reports_to", "relieving_date"],
+		as_dict=True,
+	)
+	if employee:
+		_send_exit_notifications(employee, event="revoked", reason=reason)
+
+
+def _send_exit_notifications(employee, event, reason=None):
+	"""Fan out an employee-exit / access-revocation notification (in-app + email)
+	to HR, the employee's immediate manager and the master trainer(s)."""
+	employee_name = employee.employee_name or employee.name
+
+	if event == "exit":
+		relieved = (
+			f" effective <strong>{format_date(employee.relieving_date)}</strong>"
+			if employee.get("relieving_date")
+			else ""
+		)
+		subject = f"Employee Exit: {employee_name} has left the organization"
+		message = (
+			f"<strong>{employee_name}</strong> has left the organization{relieved}. "
+			f"Their LMS access stands revoked. Please complete any pending "
+			f"offboarding steps (course handovers, batch reassignments, reporting-line updates)."
+		)
+	else:
+		subject = f"Access Revoked: LMS access for {employee_name} has been revoked"
+		message = (
+			f"LMS access for <strong>{employee_name}</strong> has been revoked."
+			+ (f" {reason}" if reason else "")
+			+ " Please review their pending course assignments and reporting line."
+		)
+
+	# Immediate manager — resolved via the HR reporting line.
+	manager_user = None
+	if employee.get("reports_to"):
+		manager_user = frappe.db.get_value("Employee", employee.reports_to, "user_id")
+		if manager_user and not cint(frappe.db.get_value("User", manager_user, "enabled")):
+			manager_user = None  # don't notify a disabled account
+
+	# HR (org-wide, by role) + master trainers (org-wide, by role profile).
+	recipients = set(get_users_with_role(HR_ROLE)) | set(_get_master_trainers())
+	if manager_user:
+		recipients.add(manager_user)
+
+	# Never notify the exiting employee about their own exit.
+	recipients.discard(employee.get("user_id"))
+	recipients.discard(None)
+
+	for recipient in recipients:
+		_notify(recipient, frappe.session.user, subject, message, "Employee", employee.name)
+
+
+def _get_master_trainers():
+	"""All enabled users carrying the Master Trainer role profile (org-wide)."""
+	return frappe.get_all(
+		"User",
+		filters={"role_profile_name": MASTER_TRAINER_ROLE_PROFILE, "enabled": 1},
+		pluck="name",
+	)
+
+
+def _notify(recipient, from_user, subject, message, ref_doctype=None, ref_name=None):
 	"""Create an in-app Notification Log entry and send an email to one recipient."""
 	notification = frappe.new_doc("Notification Log")
 	notification.for_user = recipient
@@ -288,9 +413,9 @@ def _notify(recipient, from_user, subject, message, enrollment_name):
 	notification.type = "Alert"
 	notification.subject = subject
 	notification.email_content = message
-	if enrollment_name:
-		notification.document_type = "LMS Enrollment"
-		notification.document_name = enrollment_name
+	if ref_doctype and ref_name:
+		notification.document_type = ref_doctype
+		notification.document_name = ref_name
 	notification.save(ignore_permissions=True)
 
 	try:
@@ -298,9 +423,9 @@ def _notify(recipient, from_user, subject, message, enrollment_name):
 			recipients=[recipient],
 			subject=subject,
 			message=message,
-			reference_doctype="LMS Enrollment" if enrollment_name else None,
-			reference_name=enrollment_name,
+			reference_doctype=ref_doctype if ref_name else None,
+			reference_name=ref_name,
 		)
 	except Exception:
-		# Never let a single failed email abort the whole daily run.
-		frappe.log_error(title="Course deadline reminder email failed")
+		# Never let a single failed email abort the whole run.
+		frappe.log_error(title="LMS notification email failed")
