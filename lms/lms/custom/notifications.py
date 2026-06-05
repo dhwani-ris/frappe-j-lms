@@ -90,6 +90,8 @@ def notify_on_quiz_submission(doc, method):
 		notification.subject = f"{student_name} submitted quiz '{quiz_title}'"
 		notification.document_type = "LMS Quiz Submission"
 		notification.document_name = doc.name
+		# ignore_permissions: doc-event hook runs as the submitting student, who has
+		# no write access to another user's Notification Log — written as the system.
 		notification.save(ignore_permissions=True)
 
 
@@ -128,6 +130,8 @@ def notify_on_course_completion(doc, method):
 		notification.subject = f"{student_name} completed the course '{course_title}'"
 		notification.document_type = "LMS Enrollment"
 		notification.document_name = doc.name
+		# ignore_permissions: doc-event hook runs as the completing student, who has
+		# no write access to another user's Notification Log — written as the system.
 		notification.save(ignore_permissions=True)
 
 	# Notify manager via Employee hierarchy
@@ -150,6 +154,8 @@ def notify_on_course_completion(doc, method):
 			notification.subject = f"{student_name} completed the course '{course_title}'"
 			notification.document_type = "LMS Enrollment"
 			notification.document_name = doc.name
+			# ignore_permissions: doc-event hook runs as the completing student, who has
+			# no write access to another user's Notification Log — written as the system.
 			notification.save(ignore_permissions=True)
 
 
@@ -416,6 +422,8 @@ def _notify(recipient, from_user, subject, message, ref_doctype=None, ref_name=N
 	if ref_doctype and ref_name:
 		notification.document_type = ref_doctype
 		notification.document_name = ref_name
+	# ignore_permissions: Notification Log must be written as the system — the recipient
+	# is never the session user, and this helper is called from both scheduler and API contexts.
 	notification.save(ignore_permissions=True)
 
 	try:
