@@ -115,7 +115,13 @@ doc_events = {
     "User": {
         "validate": "lms.lms.user.validate_username_duplicates",
         "after_insert": "lms.lms.user.after_insert",
-        "on_update": "lms.lms.user.on_update",
+        "on_update": [
+            "lms.lms.user.on_update",
+            "lms.lms.custom.notifications.notify_on_user_disabled",
+        ],
+    },
+    "Employee": {
+        "on_update": "lms.lms.custom.notifications.notify_on_employee_exit",
     },
     "LMS Quiz Submission": {
         "after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
@@ -144,6 +150,7 @@ scheduler_events = {
         "lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
         "lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
         "lms.lms.custom.notifications.check_student_progress_alerts",
+        "lms.lms.custom.notifications.check_course_deadline_reminders",
     ],
 }
 

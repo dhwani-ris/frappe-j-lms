@@ -1112,6 +1112,14 @@ def unassign_employee_role(employee):
     user.save(ignore_permissions=True)
     frappe.clear_cache(user=emp.user_id)
 
+    # Removing the LMS role profile revokes LMS access — notify HR, the
+    # immediate manager and the master trainer(s).
+    from lms.lms.custom.notifications import notify_lms_access_revoked
+
+    notify_lms_access_revoked(
+        emp.name, reason=f"The LMS role profile '{old_profile}' was removed."
+    )
+
     return {
         "success": True,
         "message": f"Role profile '{old_profile}' removed from {emp.employee_name}",
