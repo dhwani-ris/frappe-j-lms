@@ -43,6 +43,9 @@
 		</header>
 
 		<div class="p-5">
+			<!-- Employee feedback awaiting this trainer / master trainer -->
+			<EmployeeFeedbackList :heading="__('Employee Feedback')" />
+
 			<!-- Search and Filters -->
 			<div v-if="dashboard.data?.batches?.length" class="mb-6 flex flex-wrap gap-3">
 				<div class="flex-1 min-w-[250px]">
@@ -464,6 +467,7 @@ import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, Fo
 import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3, X, RotateCw } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
+import EmployeeFeedbackList from '@/components/EmployeeFeedbackList.vue'
 import dayjs from 'dayjs'
 import { ref, computed, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'

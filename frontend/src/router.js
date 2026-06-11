@@ -291,6 +291,17 @@ const routes = [
 		component: () => import('@/pages/EmployeeDetail.vue'),
 		props: true,
 	},
+	{
+		path: '/feedback',
+		name: 'EmployeeFeedback',
+		component: () => import('@/pages/EmployeeFeedback.vue'),
+	},
+	{
+		path: '/feedback/:name',
+		name: 'EmployeeFeedbackForm',
+		component: () => import('@/pages/EmployeeFeedbackForm.vue'),
+		props: true,
+	},
 ]
 
 let router = createRouter({

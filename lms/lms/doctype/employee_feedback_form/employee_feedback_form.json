@@ -1,0 +1,278 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "EFF-.#####",
+ "creation": "2026-06-11 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "employee_information_section",
+  "employee",
+  "employee_name",
+  "course",
+  "course_title",
+  "column_break_emp",
+  "batch",
+  "completed_on",
+  "immediate_manager",
+  "status",
+  "manager_feedback_section",
+  "manager_meeting_datetime",
+  "manager_feedback",
+  "column_break_mgr",
+  "manager_feedback_done",
+  "manager_feedback_by",
+  "manager_feedback_on",
+  "trainer_feedback_section",
+  "trainer_feedback",
+  "master_feedback_section",
+  "master_meeting_datetime",
+  "master_feedback",
+  "column_break_master",
+  "master_feedback_done",
+  "master_feedback_by",
+  "master_feedback_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee_information_section",
+   "fieldtype": "Section Break",
+   "label": "Employee Information"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Course",
+   "options": "LMS Course",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fetch_from": "course.title",
+   "fieldname": "course_title",
+   "fieldtype": "Data",
+   "label": "Course Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_emp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "label": "Batch",
+   "options": "LMS Batch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Date",
+   "label": "Completed On",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.reports_to",
+   "fieldname": "immediate_manager",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Immediate Manager",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nManager Feedback Added\nTrainer Feedback Added\nCompleted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_feedback_section",
+   "fieldtype": "Section Break",
+   "label": "Manager Feedback"
+  },
+  {
+   "fieldname": "manager_meeting_datetime",
+   "fieldtype": "Datetime",
+   "label": "Meeting Date & Time"
+  },
+  {
+   "fieldname": "manager_feedback",
+   "fieldtype": "Text Editor",
+   "label": "Feedback"
+  },
+  {
+   "fieldname": "column_break_mgr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "manager_feedback_done",
+   "fieldtype": "Check",
+   "label": "Recorded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_feedback_by",
+   "fieldtype": "Link",
+   "label": "Recorded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_feedback_on",
+   "fieldtype": "Datetime",
+   "label": "Recorded On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "trainer_feedback_section",
+   "fieldtype": "Section Break",
+   "label": "Trainer Feedback"
+  },
+  {
+   "fieldname": "trainer_feedback",
+   "fieldtype": "Table",
+   "label": "Trainer Feedback",
+   "options": "Employee Feedback Trainer"
+  },
+  {
+   "fieldname": "master_feedback_section",
+   "fieldtype": "Section Break",
+   "label": "Master Trainer Feedback"
+  },
+  {
+   "fieldname": "master_meeting_datetime",
+   "fieldtype": "Datetime",
+   "label": "Meeting Date & Time"
+  },
+  {
+   "fieldname": "master_feedback",
+   "fieldtype": "Text Editor",
+   "label": "Feedback"
+  },
+  {
+   "fieldname": "column_break_master",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "master_feedback_done",
+   "fieldtype": "Check",
+   "label": "Recorded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "master_feedback_by",
+   "fieldtype": "Link",
+   "label": "Recorded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "master_feedback_on",
+   "fieldtype": "Datetime",
+   "label": "Recorded On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LMS",
+ "name": "Employee Feedback Form",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS HR",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS Trainer",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS Master Trainer",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS Student"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "employee_name",
+ "track_changes": 1
+}

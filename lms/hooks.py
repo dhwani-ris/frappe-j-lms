@@ -83,10 +83,12 @@ after_migrate = [
 permission_query_conditions = {
     "LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
     "DocType": "lms.app_permissions.filter_importable_doctypes",
+    "Employee Feedback Form": "lms.lms.custom.employee_feedback.get_permission_query",
 }
 
 has_permission = {
     "LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
+    "Employee Feedback Form": "lms.lms.custom.employee_feedback.has_permission",
 }
 
 # DocType Class
@@ -127,7 +129,10 @@ doc_events = {
         "after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
     },
     "LMS Enrollment": {
-        "on_update": "lms.lms.custom.notifications.notify_on_course_completion",
+        "on_update": [
+            "lms.lms.custom.notifications.notify_on_course_completion",
+            "lms.lms.custom.employee_feedback.create_feedback_form_on_completion",
+        ],
     },
 }
 
