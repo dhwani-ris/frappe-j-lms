@@ -12,6 +12,8 @@ sends an **email**.
 | Student behind | Daily — `check_student_progress_alerts` | Manager (`reports_to`) |
 | **Course deadline approaching** | Daily — `check_course_deadline_reminders` | **Student + trainers + master trainers + manager** |
 | **Employee exit / access revoked** | `Employee` `on_update` (status change), `User` `on_update` (disabled), role-profile removal | **HR + manager + master trainers** |
+| **Feedback sessions scheduled** | `notify_feedback_scheduled` — called from `employee_feedback.schedule_sessions` | **Each participant (their slot) + the employee (full schedule)** |
+| Employee Feedback lifecycle | `employee_feedback.py` (`notify_form_created` / `_manager_feedback` / `_trainer_feedback` / `_completed`) | Manager / trainers / master trainers / employee / HR, per event |
 
 ---
 
@@ -161,3 +163,37 @@ Run them with:
 ```bash
 bench --site <site> run-tests --module lms.lms.custom.test_employee_exit_notifications
 ```
+
+---
+
+## Employee Feedback Form notifications
+
+The Employee Feedback Form (auto-created on 100% completion of an assigned course)
+fans out in-app + email notifications at each stage. The **scheduling** notification
+lives here in `notifications.py` (`notify_feedback_scheduled`); the lifecycle ones
+live alongside the form logic in
+[`employee_feedback.py`](./employee_feedback.py) and reuse the shared `_notify` helper.
+
+| Event | Function | Recipients |
+|---|---|---|
+| Form created (employee finished an assigned course) | `employee_feedback.notify_form_created` | Immediate manager + every pre-filled trainer + all master trainers |
+| **Sessions scheduled** (Master Trainer confirms all times) | `notify_feedback_scheduled` | Each participant gets **their own slot** (manager, every trainer, the master trainer); the **employee** gets the **full schedule** |
+| Manager feedback recorded | `employee_feedback.notify_manager_feedback` | Employee + all master trainers |
+| Trainer feedback recorded (per row) | `employee_feedback.notify_trainer_feedback` | That trainer + manager + all master trainers |
+| Completed | `employee_feedback.notify_completed` | Employee + manager + all master trainers + HR |
+
+### Sessions scheduled — details
+
+`notify_feedback_scheduled(form)` is called once the scheduling Master Trainer
+confirms the times (`schedule_sessions`). Meeting times are **owned by the Master
+Trainer** — no other user can edit them — so this message tells each person exactly
+when their session is:
+
+- **Manager** (if the employee has one), **each trainer**, and the **master trainer**
+  (the MT who scheduled, `master_trainer`) each receive their own date/time.
+- The **employee** receives the full list of all their sessions.
+- `from_user` is the scheduling master trainer; the reference document is the
+  `Employee Feedback Form`. Email failures are caught and logged, never aborting the
+  schedule.
+
+Re-confirming after a **Reschedule** re-sends these notifications with the new times.

@@ -4,7 +4,10 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, now_datetime, strip_html
+from frappe.utils import cint, get_datetime, now_datetime, strip_html
+
+SESSION_GAP_MINUTES = 15
+SESSION_GAP_SECONDS = SESSION_GAP_MINUTES * 60
 
 
 def _has_text(value):
@@ -44,7 +47,15 @@ class EmployeeFeedbackForm(Document):
 		master_feedback_done: DF.Check
 		master_feedback_on: DF.Datetime | None
 		master_meeting_datetime: DF.Datetime | None
-		status: DF.Literal["Draft", "Manager Feedback Added", "Trainer Feedback Added", "Completed"]
+		master_trainer: DF.Link | None
+		sessions_scheduled: DF.Check
+		status: DF.Literal[
+			"Draft",
+			"Sessions Scheduled",
+			"Manager Feedback Added",
+			"Trainer Feedback Added",
+			"Completed",
+		]
 		trainer_feedback: DF.Table[EmployeeFeedbackTrainer]
 	# end: auto-generated types
 
@@ -57,15 +68,93 @@ class EmployeeFeedbackForm(Document):
 				_("This feedback form is completed. Ask an L&D Admin to reopen it before editing.")
 			)
 
+		# Meeting times are owned by the Master Trainer and locked once scheduled. Nobody
+		# may change them through a normal save — only an explicit (re)schedule.
+		if (
+			before
+			and cint(before.sessions_scheduled)
+			and not self.flags.get("scheduling")
+			and not self.flags.get("rescheduling")
+			and self._meeting_times_changed(before)
+		):
+			frappe.throw(
+				_("Meeting times are locked. Reschedule the sessions to change them.")
+			)
+
+		if self.flags.get("scheduling"):
+			self.validate_schedule()
+			self.sessions_scheduled = 1
+
 		self.set_feedback_flags(before)
 
-		if self.flags.get("reopening"):
+		if self.flags.get("reopening") or self.flags.get("rescheduling"):
+			self.sessions_scheduled = 0
 			self.status = "Draft"
 		elif self.flags.get("allow_complete"):
 			self.validate_completion()
 			self.status = "Completed"
 		else:
 			self.compute_status()
+
+	# -- scheduling ----------------------------------------------------------
+
+	def _ordered_slots(self):
+		"""The meeting slots in their required chronological order:
+		manager (if any) → each trainer row in order → master trainer."""
+		slots = []
+		if self.immediate_manager:
+			slots.append((_("Manager"), self.manager_meeting_datetime))
+		for idx, row in enumerate(self.trainer_feedback, start=1):
+			label = row.trainer_name or row.trainer or _("Trainer {0}").format(idx)
+			slots.append((label, row.meeting_datetime))
+		slots.append((_("Master Trainer"), self.master_meeting_datetime))
+		return slots
+
+	def validate_schedule(self):
+		"""All meeting times must be present, in the future, in strict order
+		(manager < trainers in row order < master) and ≥15 minutes apart."""
+		slots = self._ordered_slots()
+
+		for label, dt in slots:
+			if not dt:
+				frappe.throw(
+					_("A meeting time is required for {0} before confirming the schedule.").format(label)
+				)
+
+		now = now_datetime()
+		parsed = [(label, get_datetime(dt)) for label, dt in slots]
+
+		for label, dt in parsed:
+			if dt <= now:
+				frappe.throw(_("Meeting time for {0} must be in the future.").format(label))
+
+		for (plabel, pdt), (clabel, cdt) in zip(parsed, parsed[1:]):
+			if cdt <= pdt:
+				frappe.throw(
+					_("{0}'s meeting must be scheduled before {1}'s meeting.").format(plabel, clabel)
+				)
+			if (cdt - pdt).total_seconds() < SESSION_GAP_SECONDS:
+				frappe.throw(
+					_("There must be at least {0} minutes between {1}'s and {2}'s meetings.").format(
+						SESSION_GAP_MINUTES, plabel, clabel
+					)
+				)
+
+	def _meeting_times_changed(self, before):
+		def norm(v):
+			return str(v or "")
+
+		if norm(self.manager_meeting_datetime) != norm(before.manager_meeting_datetime):
+			return True
+		if norm(self.master_meeting_datetime) != norm(before.master_meeting_datetime):
+			return True
+		before_rows = {r.name: r.meeting_datetime for r in before.trainer_feedback}
+		for row in self.trainer_feedback:
+			if norm(row.meeting_datetime) != norm(before_rows.get(row.name)):
+				return True
+		return False
+
+	# -- feedback flags & status --------------------------------------------
 
 	def set_feedback_flags(self, before=None):
 		"""Mark each block (manager / master / every trainer row) as recorded once its
@@ -100,24 +189,33 @@ class EmployeeFeedbackForm(Document):
 			self.set(by_field, None)
 			self.set(on_field, None)
 
+	def manager_required(self):
+		return bool(self.immediate_manager)
+
+	def manager_ok(self):
+		return (not self.manager_required()) or cint(self.manager_feedback_done)
+
 	def all_trainers_recorded(self):
 		return bool(self.trainer_feedback) and all(cint(r.recorded) for r in self.trainer_feedback)
 
 	def compute_status(self):
-		"""Derive the furthest non-terminal state. 'Completed' is only ever set by the
-		explicit complete action, never here."""
-		manager_ok = cint(self.manager_feedback_done)
-		if manager_ok and self.all_trainers_recorded():
+		"""Status reflects progress. Feedback only opens after the Master Trainer has
+		scheduled all sessions; 'Completed' is set only by the explicit complete action."""
+		if not cint(self.sessions_scheduled):
+			self.status = "Draft"
+			return
+		if self.manager_ok() and self.all_trainers_recorded():
 			self.status = "Trainer Feedback Added"
-		elif manager_ok:
+		elif cint(self.manager_feedback_done):
 			self.status = "Manager Feedback Added"
 		else:
-			self.status = "Draft"
+			self.status = "Sessions Scheduled"
 
 	def validate_completion(self):
-		"""Gate the final completion: manager + at least one trainer (all recorded) + master."""
+		"""Gate the final completion: manager (if any) + at least one trainer (all
+		recorded) + master trainer feedback."""
 		if (
-			not cint(self.manager_feedback_done)
+			not self.manager_ok()
 			or not self.all_trainers_recorded()
 			or not cint(self.master_feedback_done)
 		):

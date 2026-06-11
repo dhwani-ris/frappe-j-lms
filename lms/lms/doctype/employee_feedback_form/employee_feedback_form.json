@@ -17,6 +17,7 @@
   "completed_on",
   "immediate_manager",
   "status",
+  "sessions_scheduled",
   "manager_feedback_section",
   "manager_meeting_datetime",
   "manager_feedback",
@@ -27,6 +28,7 @@
   "trainer_feedback_section",
   "trainer_feedback",
   "master_feedback_section",
+  "master_trainer",
   "master_meeting_datetime",
   "master_feedback",
   "column_break_master",
@@ -109,7 +111,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nManager Feedback Added\nTrainer Feedback Added\nCompleted",
+   "options": "Draft\nSessions Scheduled\nManager Feedback Added\nTrainer Feedback Added\nCompleted",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sessions_scheduled",
+   "fieldtype": "Check",
+   "label": "Sessions Scheduled",
    "read_only": 1
   },
   {
@@ -168,6 +177,14 @@
    "label": "Master Trainer Feedback"
   },
   {
+   "fieldname": "master_trainer",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Master Trainer",
+   "options": "User",
+   "read_only": 1
+  },
+  {
    "fieldname": "master_meeting_datetime",
    "fieldtype": "Datetime",
    "label": "Meeting Date & Time"
@@ -204,7 +221,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-11 00:00:00.000000",
+ "modified": "2026-06-11 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "LMS",
  "name": "Employee Feedback Form",

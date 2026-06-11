@@ -7,11 +7,21 @@
 				class="h-7"
 				:items="[
 					{ label: __('Home'), route: { name: 'Home' } },
-					{ label: __('Employee Feedback') },
+					{ label: __('Employee Feedback'), route: { name: 'EmployeeFeedback' } },
 					{ label: form?.employee_name || feedbackName },
 				]"
 			/>
-			<Badge v-if="form" :theme="statusTheme" variant="subtle" :label="__(form.status)" />
+			<div class="flex items-center gap-2">
+				<Button
+					v-if="form?.can_reschedule"
+					variant="subtle"
+					:loading="saving === 'reschedule'"
+					@click="reschedule"
+				>
+					{{ __('Reschedule') }}
+				</Button>
+				<Badge v-if="form" :theme="statusTheme" variant="subtle" :label="__(form.status)" />
+			</div>
 		</header>
 
 		<div v-if="resource.loading" class="flex items-center justify-center py-20">
@@ -35,138 +45,176 @@
 						<div class="text-ink-gray-8">{{ form.immediate_manager_name || '—' }}</div>
 					</div>
 					<div>
-						<div class="text-ink-gray-4">{{ __('Batch') }}</div>
-						<div class="text-ink-gray-8">{{ form.batch || '—' }}</div>
+						<div class="text-ink-gray-4">{{ __('Master Trainer') }}</div>
+						<div class="text-ink-gray-8">{{ form.master_trainer || '—' }}</div>
 					</div>
 				</div>
 			</div>
 
-			<!-- Manager Feedback -->
-			<FeedbackBlock
-				:title="__('Manager Feedback')"
-				:recorded="!!form.manager_feedback_done"
-				:recorded-by="form.manager_feedback_by"
-				:recorded-on="form.manager_feedback_on"
-				:editable="form.can_edit_manager"
-				:datetime="managerEdit.datetime"
-				:feedback="form.manager_feedback"
-				:saving="saving === 'manager'"
-				@save="(p) => saveManager(p)"
-			/>
+			<!-- Schedule panel (Master Trainer / admin, before scheduling is confirmed) -->
+			<div v-if="form.can_schedule" class="mb-6 rounded-lg border border-blue-200 bg-surface-blue-1 p-5">
+				<div class="mb-1 font-semibold text-ink-gray-9">{{ __('Schedule feedback sessions') }}</div>
+				<p class="mb-4 text-sm text-ink-gray-6">
+					{{
+						__(
+							'Set each meeting time. Order must be manager → trainers (in order) → master, at least 15 minutes apart, all in the future.'
+						)
+					}}
+				</p>
 
-			<!-- Trainer Feedback -->
-			<div class="mb-6 rounded-lg border bg-surface-white p-5">
-				<div class="mb-3 flex items-center justify-between">
-					<div class="font-semibold text-ink-gray-9">{{ __('Trainer Feedback') }}</div>
-					<span class="text-sm text-ink-gray-5">
-						{{ recordedTrainers }}/{{ form.trainers.length }} {{ __('recorded') }}
-					</span>
+				<div v-if="form.immediate_manager" class="mb-3">
+					<label class="mb-1 block text-sm text-ink-gray-7">
+						{{ __('Manager') }} — {{ form.immediate_manager_name }}
+					</label>
+					<input type="datetime-local" v-model="sched.manager" class="form-input w-full" />
 				</div>
-				<div v-if="!form.trainers.length" class="text-sm text-ink-gray-5">
-					{{ __('No trainers assigned.') }}
+
+				<div v-for="t in form.trainers" :key="t.name" class="mb-3">
+					<label class="mb-1 block text-sm text-ink-gray-7">
+						{{ __('Trainer') }} — {{ t.trainer_name || t.trainer }}
+					</label>
+					<input
+						type="datetime-local"
+						v-model="sched.trainers[t.name]"
+						class="form-input w-full"
+					/>
 				</div>
-				<div
-					v-for="row in form.trainers"
-					:key="row.trainer"
-					class="border-t py-4 first:border-t-0 first:pt-0"
-				>
-					<div class="mb-2 flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<span class="font-medium text-ink-gray-8">
-								{{ row.trainer_name || row.trainer }}
-							</span>
+
+				<div class="mb-4">
+					<label class="mb-1 block text-sm text-ink-gray-7">
+						{{ __('Master Trainer') }} ({{ __('you') }})
+					</label>
+					<input type="datetime-local" v-model="sched.master" class="form-input w-full" />
+				</div>
+
+				<Button variant="solid" :loading="saving === 'schedule'" @click="confirmSchedule">
+					{{ __('Confirm Schedule') }}
+				</Button>
+			</div>
+
+			<!-- Not yet scheduled, and the viewer can't schedule -->
+			<div
+				v-else-if="!form.sessions_scheduled"
+				class="mb-6 rounded-lg border bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
+			>
+				{{ __('Feedback will open once the master trainer schedules the sessions.') }}
+			</div>
+
+			<!-- Feedback sections (only once scheduled) -->
+			<template v-if="form.sessions_scheduled">
+				<!-- Manager Feedback -->
+				<FeedbackBlock
+					v-if="form.immediate_manager"
+					:title="__('Manager Feedback')"
+					:recorded="!!form.manager_feedback_done"
+					:recorded-by="form.manager_feedback_by"
+					:recorded-on="form.manager_feedback_on"
+					:editable="form.can_edit_manager"
+					:scheduled-datetime="form.manager_meeting_datetime"
+					:feedback="form.manager_feedback"
+					:saving="saving === 'manager'"
+					@save="(p) => saveManager(p)"
+				/>
+
+				<!-- Trainer Feedback -->
+				<div class="mb-6 rounded-lg border bg-surface-white p-5">
+					<div class="mb-3 flex items-center justify-between">
+						<div class="font-semibold text-ink-gray-9">{{ __('Trainer Feedback') }}</div>
+						<span class="text-sm text-ink-gray-5">
+							{{ recordedTrainers }}/{{ form.trainers.length }} {{ __('recorded') }}
+						</span>
+					</div>
+					<div v-if="!form.trainers.length" class="text-sm text-ink-gray-5">
+						{{ __('No trainers assigned.') }}
+					</div>
+					<div
+						v-for="row in form.trainers"
+						:key="row.trainer"
+						class="border-t py-4 first:border-t-0 first:pt-0"
+					>
+						<div class="mb-2 flex items-center justify-between">
+							<div class="flex items-center gap-2">
+								<span class="font-medium text-ink-gray-8">
+									{{ row.trainer_name || row.trainer }}
+								</span>
+								<Badge v-if="row.is_me" theme="blue" variant="subtle" :label="__('You')" />
+							</div>
 							<Badge
-								v-if="row.is_me"
-								theme="blue"
+								:theme="row.recorded ? 'green' : 'gray'"
 								variant="subtle"
-								:label="__('You')"
+								:label="row.recorded ? __('Recorded') : __('Pending')"
 							/>
 						</div>
-						<Badge
-							:theme="row.recorded ? 'green' : 'gray'"
-							variant="subtle"
-							:label="row.recorded ? __('Recorded') : __('Pending')"
-						/>
-					</div>
-
-					<!-- Editable: the current user's own row -->
-					<div v-if="row.is_me && form.can_edit_trainer" class="space-y-2">
-						<input
-							type="datetime-local"
-							v-model="trainerEdit.datetime"
-							class="form-input w-full"
-						/>
-						<FormControl
-							type="textarea"
-							:rows="4"
-							v-model="trainerEdit.feedback"
-							:placeholder="__('Your feedback after the mock session…')"
-						/>
-						<Button
-							variant="solid"
-							:loading="saving === 'trainer'"
-							@click="saveTrainer"
-						>
-							{{ __('Save Trainer Feedback') }}
-						</Button>
-					</div>
-
-					<!-- Read-only -->
-					<div v-else>
-						<div v-if="row.meeting_datetime" class="mb-1 text-xs text-ink-gray-5">
-							{{ __('Meeting') }}: {{ row.meeting_datetime }}
+						<div class="mb-2 text-sm text-ink-gray-6">
+							<span class="text-ink-gray-4">{{ __('Scheduled') }}:</span>
+							{{ row.meeting_datetime || __('Not scheduled yet') }}
 						</div>
-						<div
-							v-if="row.feedback"
-							class="prose prose-sm max-w-none text-ink-gray-7"
-							v-html="row.feedback"
-						/>
-						<div v-else class="text-sm text-ink-gray-4">
-							{{ __('Not recorded yet.') }}
+
+						<!-- Editable: the current user's own row -->
+						<div v-if="row.is_me && form.can_edit_trainer" class="space-y-2">
+							<FormControl
+								type="textarea"
+								:rows="4"
+								v-model="trainerFeedback"
+								:placeholder="__('Your feedback after the mock session…')"
+							/>
+							<Button variant="solid" :loading="saving === 'trainer'" @click="saveTrainer">
+								{{ __('Save Trainer Feedback') }}
+							</Button>
+						</div>
+
+						<!-- Read-only -->
+						<div v-else>
+							<div
+								v-if="row.feedback"
+								class="prose prose-sm max-w-none text-ink-gray-7"
+								v-html="row.feedback"
+							/>
+							<div v-else class="text-sm text-ink-gray-4">{{ __('Not recorded yet.') }}</div>
 						</div>
 					</div>
 				</div>
-			</div>
 
-			<!-- Master Trainer Feedback -->
-			<FeedbackBlock
-				:title="__('Master Trainer Feedback')"
-				:recorded="!!form.master_feedback_done"
-				:recorded-by="form.master_feedback_by"
-				:recorded-on="form.master_feedback_on"
-				:editable="form.can_edit_master"
-				:datetime="masterEdit.datetime"
-				:feedback="form.master_feedback"
-				:saving="saving === 'master'"
-				@save="(p) => saveMaster(p)"
-			/>
+				<!-- Master Trainer Feedback -->
+				<FeedbackBlock
+					:title="__('Master Trainer Feedback')"
+					:recorded="!!form.master_feedback_done"
+					:recorded-by="form.master_feedback_by"
+					:recorded-on="form.master_feedback_on"
+					:editable="form.can_edit_master"
+					:scheduled-datetime="form.master_meeting_datetime"
+					:feedback="form.master_feedback"
+					:saving="saving === 'master'"
+					@save="(p) => saveMaster(p)"
+				/>
 
-			<!-- Actions -->
-			<div class="flex items-center justify-end gap-2">
-				<Button
-					v-if="form.can_reopen"
-					variant="subtle"
-					:loading="saving === 'reopen'"
-					@click="reopen"
+				<!-- Actions -->
+				<div class="flex items-center justify-end gap-2">
+					<Button
+						v-if="form.can_reopen"
+						variant="subtle"
+						:loading="saving === 'reopen'"
+						@click="reopen"
+					>
+						{{ __('Reopen for Corrections') }}
+					</Button>
+					<Button
+						v-if="form.can_edit_master"
+						variant="solid"
+						:disabled="!form.can_complete"
+						:loading="saving === 'complete'"
+						@click="complete"
+					>
+						{{ __('Complete & Submit') }}
+					</Button>
+				</div>
+				<p
+					v-if="form.can_edit_master && !form.can_complete && form.status !== 'Completed'"
+					class="mt-2 text-right text-xs text-ink-gray-4"
 				>
-					{{ __('Reopen for Corrections') }}
-				</Button>
-				<Button
-					v-if="form.can_edit_master"
-					variant="solid"
-					:disabled="!form.can_complete"
-					:loading="saving === 'complete'"
-					@click="complete"
-				>
-					{{ __('Complete & Submit') }}
-				</Button>
-			</div>
-			<p
-				v-if="form.can_edit_master && !form.can_complete && form.status !== 'Completed'"
-				class="mt-2 text-right text-xs text-ink-gray-4"
-			>
-				{{ __('Manager, all trainers and master feedback must be recorded to complete.') }}
-			</p>
+					{{ __('Manager, all trainers and master feedback must be recorded to complete.') }}
+				</p>
+			</template>
 		</div>
 
 		<div v-else class="p-10 text-center text-ink-gray-5">
@@ -186,9 +234,8 @@ const route = useRoute()
 const feedbackName = route.params.name
 
 const saving = ref(null)
-const managerEdit = reactive({ datetime: '' })
-const masterEdit = reactive({ datetime: '' })
-const trainerEdit = reactive({ datetime: '', feedback: '' })
+const trainerFeedback = ref('')
+const sched = reactive({ manager: '', master: '', trainers: {} })
 
 const resource = createResource({
 	url: 'lms.lms.custom.employee_feedback.get_feedback_form',
@@ -201,6 +248,7 @@ const form = computed(() => resource.data)
 const statusTheme = computed(() => {
 	const map = {
 		Draft: 'gray',
+		'Sessions Scheduled': 'blue',
 		'Manager Feedback Added': 'orange',
 		'Trainer Feedback Added': 'orange',
 		Completed: 'green',
@@ -212,15 +260,17 @@ const recordedTrainers = computed(
 	() => form.value?.trainers.filter((t) => t.recorded).length || 0
 )
 
-// Seed the editable fields once data arrives.
+// Seed editable + schedule fields once data arrives.
 watch(form, (f) => {
 	if (!f) return
-	managerEdit.datetime = toLocalInput(f.manager_meeting_datetime)
-	masterEdit.datetime = toLocalInput(f.master_meeting_datetime)
 	const myRow = f.trainers.find((t) => t.is_me)
-	if (myRow) {
-		trainerEdit.datetime = toLocalInput(myRow.meeting_datetime)
-		trainerEdit.feedback = stripHtml(myRow.feedback)
+	trainerFeedback.value = stripHtml(myRow?.feedback)
+
+	sched.manager = toLocalInput(f.manager_meeting_datetime)
+	sched.master = toLocalInput(f.master_meeting_datetime)
+	sched.trainers = {}
+	for (const t of f.trainers) {
+		sched.trainers[t.name] = toLocalInput(t.meeting_datetime)
 	}
 })
 
@@ -252,32 +302,33 @@ async function runAction(method, args, key) {
 	}
 }
 
-function saveManager(payload) {
-	managerEdit.datetime = payload.datetime
+function confirmSchedule() {
+	const trainer_times = form.value.trainers.map((t) => ({
+		row: t.name,
+		meeting_datetime: toServer(sched.trainers[t.name]),
+	}))
 	return runAction(
-		'save_manager_feedback',
-		{ name: feedbackName, meeting_datetime: toServer(payload.datetime), feedback: payload.feedback },
-		'manager'
-	)
-}
-function saveMaster(payload) {
-	masterEdit.datetime = payload.datetime
-	return runAction(
-		'save_master_feedback',
-		{ name: feedbackName, meeting_datetime: toServer(payload.datetime), feedback: payload.feedback },
-		'master'
-	)
-}
-function saveTrainer() {
-	return runAction(
-		'save_trainer_feedback',
+		'schedule_sessions',
 		{
 			name: feedbackName,
-			meeting_datetime: toServer(trainerEdit.datetime),
-			feedback: trainerEdit.feedback,
+			manager_meeting_datetime: toServer(sched.manager),
+			master_meeting_datetime: toServer(sched.master),
+			trainer_times,
 		},
-		'trainer'
+		'schedule'
 	)
+}
+function reschedule() {
+	return runAction('reschedule_sessions', { name: feedbackName }, 'reschedule')
+}
+function saveManager(payload) {
+	return runAction('save_manager_feedback', { name: feedbackName, feedback: payload.feedback }, 'manager')
+}
+function saveMaster(payload) {
+	return runAction('save_master_feedback', { name: feedbackName, feedback: payload.feedback }, 'master')
+}
+function saveTrainer() {
+	return runAction('save_trainer_feedback', { name: feedbackName, feedback: trainerFeedback.value }, 'trainer')
 }
 function complete() {
 	return runAction('complete_feedback', { name: feedbackName }, 'complete')

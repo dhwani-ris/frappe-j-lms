@@ -9,9 +9,14 @@
 			/>
 		</div>
 
-		<!-- Editable -->
+		<!-- Scheduled meeting time (set by the Master Trainer, read-only here) -->
+		<div class="mb-3 text-sm text-ink-gray-6">
+			<span class="text-ink-gray-4">{{ __('Scheduled') }}:</span>
+			{{ scheduledDatetime || __('Not scheduled yet') }}
+		</div>
+
+		<!-- Editable: feedback text only -->
 		<div v-if="editable" class="space-y-2">
-			<input type="datetime-local" v-model="localDatetime" class="form-input w-full" />
 			<FormControl
 				type="textarea"
 				:rows="4"
@@ -49,19 +54,14 @@ const props = defineProps({
 	recordedBy: String,
 	recordedOn: String,
 	editable: Boolean,
-	datetime: String,
+	scheduledDatetime: String,
 	feedback: String,
 	saving: Boolean,
 })
 const emit = defineEmits(['save'])
 
-const localDatetime = ref(props.datetime || '')
 const localFeedback = ref(stripHtml(props.feedback))
 
-watch(
-	() => props.datetime,
-	(v) => (localDatetime.value = v || '')
-)
 watch(
 	() => props.feedback,
 	(v) => (localFeedback.value = stripHtml(v))
@@ -75,6 +75,6 @@ function stripHtml(html) {
 }
 
 function emitSave() {
-	emit('save', { datetime: localDatetime.value, feedback: localFeedback.value })
+	emit('save', { feedback: localFeedback.value })
 }
 </script>
