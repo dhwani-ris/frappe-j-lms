@@ -67,6 +67,12 @@ def get_user_info():
 		["name", "employee_name", "reports_to", "department", "designation"],
 		as_dict=True,
 	)
+	# Whether this user is the evaluatee on any Employee Feedback Form — drives the
+	# "Employee Feedback" portal menu item for employees who only ever view their own.
+	user.has_employee_feedback = bool(
+		user.employee
+		and frappe.db.exists("Employee Feedback Form", {"employee": user.employee.name})
+	)
 	user.is_fc_site = is_fc_site()
 	user.is_system_manager = "System Manager" in user.roles
 	user.is_hr_manager = "HR Manager" in user.roles

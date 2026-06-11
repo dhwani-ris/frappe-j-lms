@@ -103,6 +103,14 @@ def create_jamboree_custom_docperms():
 		# LMS Course Progress
 		{"parent": "LMS Course Progress", "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
 		{"parent": "LMS Course Progress", "role": "LMS Student", "read": 1, "write": 0, "create": 1, "delete": 0},
+		# Employee Feedback Form — row-scoped via permission query. LMS Student gets
+		# read only (the query limits them to their own form, as the evaluatee).
+		{"parent": "Employee Feedback Form", "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1},
+		{"parent": "Employee Feedback Form", "role": "LMS HR", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1},
+		{"parent": "Employee Feedback Form", "role": "LMS Manager", "read": 1, "write": 1, "create": 0, "delete": 0},
+		{"parent": "Employee Feedback Form", "role": "LMS Trainer", "read": 1, "write": 1, "create": 0, "delete": 0},
+		{"parent": "Employee Feedback Form", "role": "LMS Master Trainer", "read": 1, "write": 1, "create": 0, "delete": 0},
+		{"parent": "Employee Feedback Form", "role": "LMS Student", "read": 1, "write": 0, "create": 0, "delete": 0},
 	]
 
 	# Jamboree role permissions

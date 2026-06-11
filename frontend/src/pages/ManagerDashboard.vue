@@ -24,6 +24,9 @@
 		</header>
 
 		<div class="p-5">
+			<!-- Employee feedback awaiting this manager -->
+			<EmployeeFeedbackList :heading="__('Employee Feedback')" role="manager" />
+
 			<!-- Search and Filters -->
 			<div v-if="dashboard.data?.reports?.length" class="mb-6 flex flex-wrap gap-3">
 				<div class="flex-1 min-w-[250px]">
@@ -316,6 +319,7 @@ import {
 import { BarChart3, Download, ChevronRight, Search, X } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
+import EmployeeFeedbackList from '@/components/EmployeeFeedbackList.vue'
 import { ref, computed, watch } from 'vue'
 
 const exporting = ref(false)

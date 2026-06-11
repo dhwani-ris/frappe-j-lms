@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import add_days, cint, date_diff, format_date, getdate, today
+from frappe.utils import add_days, cint, date_diff, format_date, format_datetime, getdate, today
 from frappe.utils.user import get_users_with_role
 
 # Role profile that identifies a Master Trainer (set on the User while creating
@@ -437,3 +437,78 @@ def _notify(recipient, from_user, subject, message, ref_doctype=None, ref_name=N
 	except Exception:
 		# Never let a single failed email abort the whole run.
 		frappe.log_error(title="LMS notification email failed")
+
+
+# Employee Feedback Form — sessions scheduled
+# -------------------------------------------
+EMPLOYEE_FEEDBACK_DOCTYPE = "Employee Feedback Form"
+
+
+def notify_feedback_scheduled(form):
+	"""Sent when a Master Trainer confirms the feedback session schedule.
+
+	Each participant (the immediate manager if any, every assigned trainer, and the
+	master trainer) gets an in-app notification + email with *their* slot; the
+	employee gets the full schedule. Times are owned by the Master Trainer, so this
+	tells everyone when to show up.
+	"""
+	employee_name = form.employee_name or frappe.db.get_value(
+		"Employee", form.employee, "employee_name"
+	)
+	course_title = form.course_title or frappe.db.get_value("LMS Course", form.course, "title")
+	employee_user = frappe.db.get_value("Employee", form.employee, "user_id")
+	from_user = form.master_trainer or "Administrator"
+
+	def fmt(dt):
+		return format_datetime(dt) if dt else "—"
+
+	def slot(recipient, role_phrase, when):
+		if not recipient or not when:
+			return
+		_notify(
+			recipient,
+			from_user,
+			f"Feedback session scheduled with {employee_name}",
+			(
+				f"Your {role_phrase} for <strong>{employee_name}</strong> "
+				f"({course_title}) is scheduled on <strong>{fmt(when)}</strong>."
+			),
+			EMPLOYEE_FEEDBACK_DOCTYPE,
+			form.name,
+		)
+
+	# Manager
+	if form.immediate_manager:
+		manager_user = frappe.db.get_value("Employee", form.immediate_manager, "user_id")
+		slot(manager_user, "manager feedback session", form.manager_meeting_datetime)
+
+	# Each trainer
+	for row in form.trainer_feedback:
+		slot(row.trainer, "trainer feedback session", row.meeting_datetime)
+
+	# Master trainer
+	slot(form.master_trainer, "master-trainer feedback session", form.master_meeting_datetime)
+
+	# Employee: the full schedule
+	if employee_user:
+		lines = []
+		if form.immediate_manager and form.manager_meeting_datetime:
+			lines.append(f"Manager: {fmt(form.manager_meeting_datetime)}")
+		for row in form.trainer_feedback:
+			if row.meeting_datetime:
+				lines.append(
+					f"Trainer ({row.trainer_name or row.trainer}): {fmt(row.meeting_datetime)}"
+				)
+		if form.master_meeting_datetime:
+			lines.append(f"Master Trainer: {fmt(form.master_meeting_datetime)}")
+		_notify(
+			employee_user,
+			from_user,
+			f"Your feedback sessions for '{course_title}' are scheduled",
+			(
+				f"Your feedback sessions for <strong>{course_title}</strong> are scheduled:<br>"
+				+ "<br>".join(lines)
+			),
+			EMPLOYEE_FEEDBACK_DOCTYPE,
+			form.name,
+		)
