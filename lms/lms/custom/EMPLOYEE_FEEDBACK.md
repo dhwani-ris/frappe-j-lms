@@ -327,7 +327,9 @@ table.
 ## 10. Portal UI (frappe-ui)
 
 - **Routes** (`router.js`): `/feedback` → `EmployeeFeedback.vue` (list of all forms the
-  user can act on/view); `/feedback/:name` → `EmployeeFeedbackForm.vue`.
+  user can act on/view, with a **Course / Immediate Manager / Status** filter bar — the
+  `showFilters` prop on `EmployeeFeedbackList.vue`; filtering is client-side over the
+  permission-scoped list); `/feedback/:name` → `EmployeeFeedbackForm.vue`.
 - **`EmployeeFeedbackForm.vue`** loads `get_feedback_form(name)` and renders by
   capability flags:
   - **Schedule panel** (when `can_schedule`): an **add/remove list** of datetime

@@ -576,6 +576,11 @@ def list_my_feedback_forms():
 		f["is_trainer"] = f["name"] in my_trainer_parents
 		f["is_master"] = bool(f.master_trainer) and f.master_trainer == user
 		f["can_schedule"] = scheduler
+		f["immediate_manager_name"] = (
+			frappe.db.get_value("Employee", f.immediate_manager, "employee_name")
+			if f.immediate_manager
+			else None
+		)
 
 		pending = False
 		if f["status"] != "Completed":
