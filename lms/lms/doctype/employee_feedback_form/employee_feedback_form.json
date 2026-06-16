@@ -19,22 +19,12 @@
   "status",
   "sessions_scheduled",
   "manager_feedback_section",
-  "manager_meeting_datetime",
-  "manager_feedback",
-  "column_break_mgr",
-  "manager_feedback_done",
-  "manager_feedback_by",
-  "manager_feedback_on",
+  "manager_sessions",
   "trainer_feedback_section",
   "trainer_feedback",
   "master_feedback_section",
   "master_trainer",
-  "master_meeting_datetime",
-  "master_feedback",
-  "column_break_master",
-  "master_feedback_done",
-  "master_feedback_by",
-  "master_feedback_on"
+  "master_sessions"
  ],
  "fields": [
   {
@@ -127,38 +117,10 @@
    "label": "Manager Feedback"
   },
   {
-   "fieldname": "manager_meeting_datetime",
-   "fieldtype": "Datetime",
-   "label": "Meeting Date & Time"
-  },
-  {
-   "fieldname": "manager_feedback",
-   "fieldtype": "Text Editor",
-   "label": "Feedback"
-  },
-  {
-   "fieldname": "column_break_mgr",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "manager_feedback_done",
-   "fieldtype": "Check",
-   "label": "Recorded",
-   "read_only": 1
-  },
-  {
-   "fieldname": "manager_feedback_by",
-   "fieldtype": "Link",
-   "label": "Recorded By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "manager_feedback_on",
-   "fieldtype": "Datetime",
-   "label": "Recorded On",
-   "read_only": 1
+   "fieldname": "manager_sessions",
+   "fieldtype": "Table",
+   "label": "Manager Sessions",
+   "options": "Employee Feedback Session"
   },
   {
    "fieldname": "trainer_feedback_section",
@@ -185,43 +147,15 @@
    "read_only": 1
   },
   {
-   "fieldname": "master_meeting_datetime",
-   "fieldtype": "Datetime",
-   "label": "Meeting Date & Time"
-  },
-  {
-   "fieldname": "master_feedback",
-   "fieldtype": "Text Editor",
-   "label": "Feedback"
-  },
-  {
-   "fieldname": "column_break_master",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "master_feedback_done",
-   "fieldtype": "Check",
-   "label": "Recorded",
-   "read_only": 1
-  },
-  {
-   "fieldname": "master_feedback_by",
-   "fieldtype": "Link",
-   "label": "Recorded By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "master_feedback_on",
-   "fieldtype": "Datetime",
-   "label": "Recorded On",
-   "read_only": 1
+   "fieldname": "master_sessions",
+   "fieldtype": "Table",
+   "label": "Master Trainer Sessions",
+   "options": "Employee Feedback Session"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-11 01:00:00.000000",
+ "modified": "2026-06-11 02:00:00.000000",
  "modified_by": "Administrator",
  "module": "LMS",
  "name": "Employee Feedback Form",

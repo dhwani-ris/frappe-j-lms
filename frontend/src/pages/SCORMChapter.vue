@@ -152,6 +152,12 @@ const saveProgress = (scormDetails = null) => {
 		lesson: chapter.doc.lessons[0].lesson,
 		course: props.courseName,
 		scorm_details: scormDetails,
+	}).then((data) => {
+		// On 100% completion the backend auto-creates the Employee Feedback Form; refresh
+		// the cached user info so the "Employee Feedback" menu item appears immediately.
+		if (Number(data) >= 100) {
+			user.reload()
+		}
 	})
 }
 

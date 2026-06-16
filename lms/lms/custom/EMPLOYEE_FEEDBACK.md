@@ -16,9 +16,9 @@ record feedback; the master trainer marks it complete.
 | | |
 |---|---|
 | **Parent DocType** | `Employee Feedback Form` (module **LMS**, not submittable, status-driven) |
-| **Child table** | `Employee Feedback Trainer` (`istable`) |
+| **Child tables** | `Employee Feedback Trainer` (one row per trainer) · `Employee Feedback Session` (manager & master sessions — **multiple per role**) |
 | **Trigger** | `LMS Enrollment.progress >= 100` on an **assigned** course |
-| **Reviewers** | Immediate manager, assigned trainer(s), one master trainer |
+| **Reviewers** | Immediate manager (1..n sessions), assigned trainer(s), one master trainer (1..n sessions) |
 | **UI** | frappe-ui portal (`/feedback`, `/feedback/:name`) + a small desk client script |
 | **Lifecycle** | `Draft → Sessions Scheduled → Manager Feedback Added → Trainer Feedback Added → Completed` |
 
@@ -27,8 +27,10 @@ record feedback; the master trainer marks it complete.
 | Area | Path |
 |---|---|
 | Parent DocType | `lms/lms/doctype/employee_feedback_form/` (`.json`, `.py`, `.js`, `test_*.py`) |
-| Child DocType | `lms/lms/doctype/employee_feedback_trainer/` (`.json`, `.py`) |
+| Trainer child | `lms/lms/doctype/employee_feedback_trainer/` (`.json`, `.py`) |
+| Session child (manager/master) | `lms/lms/doctype/employee_feedback_session/` (`.json`, `.py`) |
 | Backend logic / API | `lms/lms/custom/employee_feedback.py` |
+| Data migration | `lms/patches/v2_0/migrate_feedback_to_sessions.py` (in `patches.txt`, post-model-sync) |
 | Scheduling notification | `lms/lms/custom/notifications.py` (`notify_feedback_scheduled`) |
 | Hooks (events + perms) | `lms/hooks.py` |
 | Role permissions | `lms/lms/custom/jamboree_setup.py` |
@@ -74,26 +76,19 @@ works. Confirmed decisions:
 | `status` | Select | `Draft / Sessions Scheduled / Manager Feedback Added / Trainer Feedback Added / Completed`. Controller-driven, read-only, in list view. |
 | `sessions_scheduled` | Check | Set when the MT confirms the schedule. Gates feedback + locks times. Read-only. |
 
-**Manager Feedback**
+**Manager Feedback** — `manager_sessions` (Table → `Employee Feedback Session`). **Zero or
+more** sessions, all belonging to the single immediate manager. (Empty when the employee
+has no manager.)
 
-| Field | Type | Notes |
-|---|---|---|
-| `manager_meeting_datetime` | Datetime | **Set by the MT when scheduling**; read-only otherwise |
-| `manager_feedback` | Text Editor | Written by the manager |
-| `manager_feedback_done` | Check | Set in `validate()` when time + text present |
-| `manager_feedback_by` / `manager_feedback_on` | Link → User / Datetime | Stamped on the 0→1 edge (audit) |
-
-**Trainer Feedback** — `trainer_feedback` (Table → `Employee Feedback Trainer`).
+**Trainer Feedback** — `trainer_feedback` (Table → `Employee Feedback Trainer`), one row
+per assigned trainer.
 
 **Master Trainer Feedback**
 
 | Field | Type | Notes |
 |---|---|---|
 | `master_trainer` | Link → User | The MT who scheduled (self-assigned). `ignore_user_permissions`. Only this user / admin records master feedback + completes. |
-| `master_meeting_datetime` | Datetime | **Set by the MT when scheduling** |
-| `master_feedback` | Text Editor | |
-| `master_feedback_done` | Check | |
-| `master_feedback_by` / `master_feedback_on` | Link → User / Datetime | Captures which master trainer recorded |
+| `master_sessions` | Table → `Employee Feedback Session` | **One or more** master sessions, all belonging to the assigned master trainer. |
 
 ### Child — `Employee Feedback Trainer` (`istable`)
 
@@ -104,6 +99,19 @@ works. Confirmed decisions:
 | `meeting_datetime` | Datetime | **Set by the MT when scheduling**; the trainer cannot edit it |
 | `feedback` | Text Editor | Written by that trainer |
 | `recorded` | Check | Set when time + feedback present, read-only |
+
+### Child — `Employee Feedback Session` (`istable`)
+
+Used for **both** `manager_sessions` and `master_sessions` — one row = one meeting + its
+own feedback. The "who" is implied by which table the row sits in (manager = the immediate
+manager, master = the assigned `master_trainer`).
+
+| Field | Type | Notes |
+|---|---|---|
+| `meeting_datetime` | Datetime | **Set by the MT when scheduling** |
+| `feedback` | Text Editor | Written by the manager / master trainer for that session |
+| `recorded` | Check | Set when time + feedback present, read-only |
+| `recorded_by` / `recorded_on` | Link → User / Datetime | Stamped on the 0→1 edge (audit) |
 
 ---
 
@@ -164,14 +172,17 @@ in `hooks.py` (alongside the existing completion notifier):
 
 ## 6. Scheduling (Master Trainer)
 
-`schedule_sessions(name, manager_meeting_datetime, master_meeting_datetime, trainer_times)`
+`schedule_sessions(name, manager_times, master_times, trainer_times)`
 
-- **Who:** any Master Trainer (`LMS Master Trainer`) or admin (`System Manager` / `LMS HR` / Administrator). `trainer_times` is a list of `{"row": <child row name>, "meeting_datetime": ...}` (or `{"trainer": <user>, ...}`).
+- **Who:** any Master Trainer (`LMS Master Trainer`) or admin (`System Manager` / `LMS HR` / Administrator).
+- `manager_times` / `master_times` are lists of `{"row": <existing session row, optional>, "meeting_datetime": ...}` — **the MT decides how many** manager and master sessions to add/remove. `trainer_times` is a list of `{"row": <trainer row>, "meeting_datetime": ...}` (or `{"trainer": <user>, ...}`); trainer rows are fixed (one per instructor).
+- The manager/master tables are **reconciled** against the payload (`_reconcile_sessions`) — rows kept by name retain their feedback, new rows are created, omitted rows dropped.
 - Sets all meeting times, **self-assigns** the caller as `master_trainer`, runs the
   conflict check, then saves with `flags.scheduling` → `validate_schedule()` enforces:
-  - **All present** — every slot must have a time (manager slot omitted if the employee has no `reports_to`).
+  - **At least one** manager session (when the employee has a manager) and **one** master session.
+  - **All present** — every session must have a time.
   - **Future only** — every time must be after "now".
-  - **Strict order** — `manager < trainer 1 < trainer 2 < … < master` **in row order**.
+  - **Strict group order** — all manager sessions (in row order) < all trainer sessions (in row order) < all master sessions (in row order).
   - **≥15-min gap** — each consecutive pair at least 15 minutes apart.
 - On success → `sessions_scheduled = 1`, status `Sessions Scheduled`, and the
   **sessions-scheduled** notification fans out.
@@ -209,16 +220,17 @@ meeting time is owned by the MT.
 
 | Method | Who | Effect |
 |---|---|---|
-| `save_manager_feedback(name, feedback)` | the immediate manager / admin | records manager block; notifies employee + master trainers |
-| `save_trainer_feedback(name, feedback, trainer=None)` | the trainer on that row / admin | records that row; notifies trainer + manager + master trainers |
-| `save_master_feedback(name, feedback)` | the form's `master_trainer` / admin | records master block, stamps `master_feedback_by` |
+| `save_manager_feedback(name, feedback, row)` | the immediate manager / admin | records that **manager session** (`row`); notifies employee + master trainers |
+| `save_trainer_feedback(name, feedback, trainer=None)` | the trainer on that row / admin | records that trainer row; notifies trainer + manager + master trainers |
+| `save_master_feedback(name, feedback, row)` | the form's `master_trainer` / admin | records that **master session** (`row`), stamps `recorded_by` |
 | `complete_feedback(name)` | the form's `master_trainer` / admin | gate then status `Completed` |
 | `reopen_feedback(name)` | `LMS HR` / `System Manager` / Administrator | `Completed → Draft` (unscheduled) |
 
-**Completion gate** (`validate_completion`): the manager (when the employee has one)
-done, **at least one** trainer row with **all** rows recorded, and the master done —
-else `"Manager, all trainer, and master trainer feedback must be completed before
-submitting."`
+**Completion gate** (`validate_completion`): **every** manager session (when the employee
+has a manager), **every** trainer row, and **every** master session recorded — else
+`"Manager, all trainer, and master trainer feedback must be completed before submitting."`
+Status reaches `Manager Feedback Added` only once **all** manager sessions are recorded;
+`Trainer Feedback Added` once manager + **all** trainers are done.
 
 ---
 
@@ -292,14 +304,15 @@ table.
   user can act on/view); `/feedback/:name` → `EmployeeFeedbackForm.vue`.
 - **`EmployeeFeedbackForm.vue`** loads `get_feedback_form(name)` and renders by
   capability flags:
-  - **Schedule panel** (when `can_schedule`): datetime pickers for manager (if any),
-    every trainer and the master + **Confirm Schedule**; once scheduled a
-    **Reschedule** button appears.
-  - Feedback sections are **locked until `sessions_scheduled`**; the MT-set meeting
-    time shows read-only; each reviewer edits only their own block; the assigned
-    master trainer gets **Complete & Submit**; HR/admin gets **Reopen**.
-- **`FeedbackBlock.vue`** — the manager & master blocks (read-only scheduled time +
-  feedback textarea). **`EmployeeFeedbackList.vue`** — the "pending feedback" card,
+  - **Schedule panel** (when `can_schedule`): an **add/remove list** of datetime
+    pickers for manager sessions, a picker per trainer, and an add/remove list for
+    master sessions + **Confirm Schedule**; once scheduled a **Reschedule** button appears.
+  - Feedback sections are **locked until `sessions_scheduled`**; each manager and master
+    **session** renders its own block (read-only scheduled time + feedback); each reviewer
+    edits only their own sessions/row; the assigned master trainer gets **Complete &
+    Submit**; HR/admin gets **Reopen**.
+- **`FeedbackBlock.vue`** — one manager/master **session** (read-only scheduled time +
+  feedback textarea), rendered once per session row. **`EmployeeFeedbackList.vue`** — the "pending feedback" card,
   embedded in Trainer Dashboard, Manager Dashboard and Employee Detail.
 - **Left menu**: a **Management → Employee Feedback** item (`utils/index.js`,
   `canSeeEmployeeFeedback()`) shown to System Manager / reviewers, and to an
@@ -354,8 +367,15 @@ bench --site <site> run-tests --module lms.lms.doctype.employee_feedback_form.te
 
 ## 13. Edge cases & guarantees
 
-- **No immediate manager** → manager slot skipped in scheduling and not required for
-  completion.
+- **Multiple manager/master sessions** → the MT adds as many manager and master sessions
+  as needed at scheduling; the group order + ≥15-min gap apply across all of them, and a
+  role is "done" only when **all** its sessions are recorded.
+- **Migration** → existing forms (pre-sessions schema) are converted by
+  `patches/v2_0/migrate_feedback_to_sessions.py`: the old single manager/master feedback
+  becomes one session row each. Frappe leaves the old columns in place (orphan), so the
+  patch reads them post-sync; it is idempotent.
+- **No immediate manager** → manager sessions are empty; manager step skipped in
+  scheduling and not required for completion.
 - **Reschedule** reassigns `master_trainer` to whoever re-confirms; feedback preserved.
 - **Conflict check** ignores `Completed` forms (their sessions are done).
 - **Within-form overlaps** are impossible (strict order + ≥15-min gap).

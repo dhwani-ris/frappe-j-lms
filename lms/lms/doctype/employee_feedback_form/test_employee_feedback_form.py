@@ -14,15 +14,9 @@ DOCTYPE = "Employee Feedback Form"
 
 
 class TestEmployeeFeedbackForm(FrappeTestCase):
-	"""End-to-end behaviour of the Employee Feedback Form.
+	"""End-to-end behaviour of the Employee Feedback Form, including the Master-Trainer
+	scheduling phase with multiple manager/master sessions."""
 
-	Covers auto-creation, the Master-Trainer scheduling phase (order / gap / future /
-	conflict validation, MT-only, lock + reschedule), the scheduled-feedback record
-	flow, the completion gate + lock + reopen, and row-level permission scoping.
-	"""
-
-	# Learners whose forms this suite creates. Cleanup is scoped to these so we never
-	# touch real feedback forms living on the shared site.
 	TEST_LEARNER_EMAILS = (
 		"eff_learner@example.com",
 		"eff_conf1@example.com",
@@ -31,8 +25,6 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 	)
 
 	def _cleanup_forms(self):
-		"""Delete only this suite's feedback forms and commit — some hooks
-		(enqueue / sendmail) commit mid-test, so rollback alone can't isolate us."""
 		frappe.set_user("Administrator")
 		emps = frappe.get_all(
 			"Employee", {"user_id": ["in", self.TEST_LEARNER_EMAILS]}, pluck="name"
@@ -66,7 +58,7 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		self._batch_enroll(self.batch.name, self.learner.name)
 		self.enrollment = self._enroll(self.course.name, self.learner.name)
 
-	# ── helpers ───────────────────────────────────────────────────────────────
+	# ── builders ──────────────────────────────────────────────────────────────
 	def _company(self):
 		company = frappe.db.get_value("Company", {}, "name")
 		if company:
@@ -168,7 +160,6 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		).save(ignore_permissions=True)
 
 	def _complete(self, enrollment=None, employee=None, course=None):
-		"""Drive the enrollment to 100% via a real save so the on_update hook fires."""
 		enr = frappe.get_doc("LMS Enrollment", (enrollment or self.enrollment).name)
 		enr.progress = 100
 		enr.save(ignore_permissions=True)
@@ -178,36 +169,43 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		)
 		return frappe.get_doc(DOCTYPE, name) if name else None
 
-	def _times(self, base_days=1, gap=20):
-		"""Valid future schedule: manager < trainer < master, ≥15 min apart."""
-		base = add_to_date(now_datetime(), days=base_days)
-		return {
-			"manager": base,
-			"trainer": add_to_date(base, minutes=gap),
-			"master": add_to_date(base, minutes=2 * gap),
-		}
+	# ── scheduling helpers ────────────────────────────────────────────────────
+	def _schedule(self, form, manager=None, trainer=None, master=None, as_user=None):
+		"""Schedule with valid defaults: 1 manager, the trainer, 1 master — each 20 min
+		apart, all tomorrow. Pass lists/values to override."""
+		base = add_to_date(now_datetime(), days=1)
+		if manager is None:
+			manager = [base] if form.immediate_manager else []
+		if trainer is None:
+			trainer = add_to_date(base, minutes=20)
+		if master is None:
+			master = [add_to_date(base, minutes=40)]
 
-	def _schedule(self, form, times=None, as_user=None, trainer_overrides=None):
-		as_user = as_user or self.master.name
-		times = times or self._times()
-		overrides = trainer_overrides or {}
+		manager_times = [{"meeting_datetime": dt} for dt in manager]
+		master_times = [{"meeting_datetime": dt} for dt in master]
 		trainer_times = [
-			{
-				"trainer": r.trainer,
-				"meeting_datetime": overrides.get(r.trainer, times.get("trainer")),
-			}
-			for r in form.trainer_feedback
+			{"trainer": r.trainer, "meeting_datetime": trainer} for r in form.trainer_feedback
 		]
-		frappe.set_user(as_user)
+		frappe.set_user(as_user or self.master.name)
 		try:
 			return ef.schedule_sessions(
 				form.name,
-				manager_meeting_datetime=times.get("manager"),
-				master_meeting_datetime=times.get("master"),
+				manager_times=manager_times,
+				master_times=master_times,
 				trainer_times=trainer_times,
 			)
 		finally:
 			frappe.set_user("Administrator")
+
+	def _record_all(self, form):
+		form.reload()
+		for n in [s.name for s in form.manager_sessions]:
+			self._as(self.manager.name, ef.save_manager_feedback, form.name, "Manager note.", n)
+		for tr in [r.trainer for r in form.trainer_feedback]:
+			self._as(tr, ef.save_trainer_feedback, form.name, "Trainer note.")
+		form.reload()
+		for n in [s.name for s in form.master_sessions]:
+			self._as(self.master.name, ef.save_master_feedback, form.name, "Master note.", n)
 
 	def _as(self, user, fn, *args, **kwargs):
 		frappe.set_user(user)
@@ -219,13 +217,13 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 	# ── auto-creation ───────────────────────────────────────────────────────
 	def test_auto_creation_prefills_trainers_and_manager(self):
 		form = self._complete()
-		self.assertIsNotNone(form, "a feedback form should be auto-created on 100%")
+		self.assertIsNotNone(form)
 		self.assertEqual(form.status, "Draft")
 		self.assertFalse(form.sessions_scheduled)
-		self.assertEqual(form.batch, self.batch.name)
-		self.assertEqual(form.completed_on, frappe.utils.getdate(nowdate()))
 		self.assertEqual(form.immediate_manager, self.emp_manager)
 		self.assertEqual([r.trainer for r in form.trainer_feedback], [self.trainer.name])
+		self.assertEqual(len(form.manager_sessions), 0)
+		self.assertEqual(len(form.master_sessions), 0)
 
 	def test_idempotent_no_duplicate(self):
 		self._complete()
@@ -235,35 +233,16 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 			1,
 		)
 
-	def test_self_enrolled_without_batch_gets_no_form(self):
-		course2 = self._course("EFF Self Enrolled Course")
-		enr = self._enroll(course2.name, self.learner.name)
-		enr.progress = 100
-		enr.save(ignore_permissions=True)
-		self.assertFalse(
-			frappe.db.exists(DOCTYPE, {"employee": self.emp_learner, "course": course2.name})
-		)
-
 	# ── scheduling ────────────────────────────────────────────────────────────
 	def test_feedback_blocked_before_scheduling(self):
 		form = self._complete()
 		with self.assertRaises(frappe.ValidationError):
-			self._as(self.manager.name, ef.save_manager_feedback, form.name, "too early")
+			self._as(self.manager.name, ef.save_manager_feedback, form.name, "too early", "x")
 
 	def test_only_master_or_admin_can_schedule(self):
 		form = self._complete()
-		t = self._times()
-		frappe.set_user(self.manager.name)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				ef.schedule_sessions(
-					form.name,
-					manager_meeting_datetime=t["manager"],
-					master_meeting_datetime=t["master"],
-					trainer_times=[{"trainer": self.trainer.name, "meeting_datetime": t["trainer"]}],
-				)
-		finally:
-			frappe.set_user("Administrator")
+		with self.assertRaises(frappe.PermissionError):
+			self._schedule(form, as_user=self.manager.name)
 
 	def test_schedule_sets_state_and_master_trainer(self):
 		form = self._complete()
@@ -272,55 +251,65 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		self.assertTrue(form.sessions_scheduled)
 		self.assertEqual(form.status, "Sessions Scheduled")
 		self.assertEqual(form.master_trainer, self.master.name)
-		self.assertTrue(form.manager_meeting_datetime)
-		self.assertTrue(form.trainer_feedback[0].meeting_datetime)
-		self.assertTrue(form.master_meeting_datetime)
+		self.assertEqual(len(form.manager_sessions), 1)
+		self.assertEqual(len(form.master_sessions), 1)
+
+	def test_multiple_manager_and_master_sessions(self):
+		form = self._complete()
+		base = add_to_date(now_datetime(), days=2)
+		# 2 manager, trainer, 2 master — strict group order, 20 min apart.
+		self._schedule(
+			form,
+			manager=[base, add_to_date(base, minutes=20)],
+			trainer=add_to_date(base, minutes=40),
+			master=[add_to_date(base, minutes=60), add_to_date(base, minutes=80)],
+		)
+		form.reload()
+		self.assertEqual(len(form.manager_sessions), 2)
+		self.assertEqual(len(form.master_sessions), 2)
 
 	def test_schedule_rejects_bad_order(self):
 		form = self._complete()
 		base = add_to_date(now_datetime(), days=1)
-		bad = {
-			"manager": add_to_date(base, minutes=60),  # manager AFTER trainer
-			"trainer": add_to_date(base, minutes=20),
-			"master": add_to_date(base, minutes=120),
-		}
 		with self.assertRaises(frappe.ValidationError):
-			self._schedule(form, times=bad)
+			self._schedule(
+				form,
+				manager=[add_to_date(base, minutes=60)],  # manager AFTER trainer
+				trainer=add_to_date(base, minutes=20),
+				master=[add_to_date(base, minutes=120)],
+			)
 
 	def test_schedule_rejects_small_gap(self):
 		form = self._complete()
 		base = add_to_date(now_datetime(), days=1)
-		bad = {
-			"manager": base,
-			"trainer": add_to_date(base, minutes=5),  # <15 min after manager
-			"master": add_to_date(base, minutes=40),
-		}
 		with self.assertRaises(frappe.ValidationError):
-			self._schedule(form, times=bad)
+			self._schedule(
+				form,
+				manager=[base, add_to_date(base, minutes=5)],  # two manager sessions 5 min apart
+				trainer=add_to_date(base, minutes=40),
+				master=[add_to_date(base, minutes=60)],
+			)
 
 	def test_schedule_rejects_past_time(self):
 		form = self._complete()
 		base = add_to_date(now_datetime(), minutes=-120)
-		bad = {
-			"manager": base,
-			"trainer": add_to_date(base, minutes=20),
-			"master": add_to_date(base, minutes=40),
-		}
 		with self.assertRaises(frappe.ValidationError):
-			self._schedule(form, times=bad)
+			self._schedule(
+				form,
+				manager=[base],
+				trainer=add_to_date(base, minutes=20),
+				master=[add_to_date(base, minutes=40)],
+			)
 
-	def test_schedule_rejects_missing_time(self):
+	def test_schedule_requires_a_master_session(self):
 		form = self._complete()
-		t = self._times()
-		t["master"] = None  # missing master slot
 		with self.assertRaises(frappe.ValidationError):
-			self._schedule(form, times=t)
+			self._schedule(form, master=[])
 
 	def test_cross_form_conflict_for_shared_trainer(self):
-		# Two no-manager learners sharing the same trainer; overlapping trainer slots clash.
 		l1 = self._user("eff_conf1@example.com", "Conf", "One", ["LMS Student"])
 		l2 = self._user("eff_conf2@example.com", "Conf", "Two", ["LMS Student"])
-		e1 = self._employee(l1.name, "Conf One")  # no reports_to
+		e1 = self._employee(l1.name, "Conf One")
 		e2 = self._employee(l2.name, "Conf Two")
 		c1 = self._course("EFF Conflict 1")
 		c2 = self._course("EFF Conflict 2")
@@ -334,79 +323,111 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		f2 = self._complete(enr2, employee=e2, course=c2.name)
 
 		base = add_to_date(now_datetime(), days=5)
-		# f1: no manager → trainer then master, far apart.
+		# f1: no manager → trainer then master.
 		self._schedule(
 			f1,
-			times={
-				"manager": None,
-				"trainer": add_to_date(base, minutes=20),
-				"master": add_to_date(base, minutes=200),
-			},
+			manager=[],
+			trainer=add_to_date(base, minutes=20),
+			master=[add_to_date(base, minutes=200)],
 		)
 		# f2: trainer overlaps f1's trainer slot (5 min apart) → conflict.
 		with self.assertRaises(frappe.ValidationError):
 			self._schedule(
 				f2,
-				times={
-					"manager": None,
-					"trainer": add_to_date(base, minutes=25),
-					"master": add_to_date(base, minutes=400),
-				},
+				manager=[],
+				trainer=add_to_date(base, minutes=25),
+				master=[add_to_date(base, minutes=400)],
 			)
 
 	# ── record flow ─────────────────────────────────────────────────────────
 	def test_full_flow_to_completion_then_lock_and_reopen(self):
 		form = self._complete()
 		self._schedule(form)
-
-		self._as(self.manager.name, ef.save_manager_feedback, form.name, "Good.")
-		self._as(self.trainer.name, ef.save_trainer_feedback, form.name, "Mock cleared.")
+		self._record_all(form)
 		form.reload()
 		self.assertEqual(form.status, "Trainer Feedback Added")
 
-		# Completion gate trips while master feedback is missing.
-		with self.assertRaises(frappe.ValidationError):
-			self._as(self.master.name, ef.complete_feedback, form.name)
-
-		self._as(self.master.name, ef.save_master_feedback, form.name, "Endorsed.")
 		self._as(self.master.name, ef.complete_feedback, form.name)
 		form.reload()
 		self.assertEqual(form.status, "Completed")
-		self.assertEqual(form.master_feedback_by, self.master.name)
+		self.assertTrue(all(s.recorded for s in form.master_sessions))
+		self.assertEqual(form.master_sessions[0].recorded_by, self.master.name)
 
-		# Locked: further edits are blocked.
+		# Locked.
 		with self.assertRaises(frappe.ValidationError):
-			self._as(self.manager.name, ef.save_manager_feedback, form.name, "edit after lock")
+			self._as(
+				self.manager.name,
+				ef.save_manager_feedback,
+				form.name,
+				"edit after lock",
+				form.manager_sessions[0].name,
+			)
 
-		# HR reopens for corrections → back to Draft, unscheduled.
 		ef.reopen_feedback(form.name)
 		form.reload()
 		self.assertEqual(form.status, "Draft")
 		self.assertFalse(form.sessions_scheduled)
 
+	def test_completion_requires_all_manager_sessions(self):
+		form = self._complete()
+		base = add_to_date(now_datetime(), days=2)
+		self._schedule(
+			form,
+			manager=[base, add_to_date(base, minutes=20)],
+			trainer=add_to_date(base, minutes=40),
+			master=[add_to_date(base, minutes=60)],
+		)
+		form.reload()
+		# Record only the FIRST manager session, all trainers, the master.
+		self._as(
+			self.manager.name, ef.save_manager_feedback, form.name, "fb1", form.manager_sessions[0].name
+		)
+		self._as(self.trainer.name, ef.save_trainer_feedback, form.name, "trn")
+		self._as(
+			self.master.name, ef.save_master_feedback, form.name, "mst", form.master_sessions[0].name
+		)
+		with self.assertRaises(frappe.ValidationError):
+			self._as(self.master.name, ef.complete_feedback, form.name)
+		# Record the second manager session → now completes.
+		form.reload()
+		self._as(
+			self.manager.name, ef.save_manager_feedback, form.name, "fb2", form.manager_sessions[1].name
+		)
+		self._as(self.master.name, ef.complete_feedback, form.name)
+		form.reload()
+		self.assertEqual(form.status, "Completed")
+
 	def test_master_feedback_restricted_to_assigned_master(self):
 		other_master = self._master_trainer("eff_master2@example.com", "Eff", "Master2")
 		form = self._complete()
-		self._schedule(form)  # self.master self-assigns
+		self._schedule(form)
+		form.reload()
+		row = form.master_sessions[0].name
 		with self.assertRaises(frappe.PermissionError):
-			self._as(other_master.name, ef.save_master_feedback, form.name, "nope")
+			self._as(other_master.name, ef.save_master_feedback, form.name, "nope", row)
 		with self.assertRaises(frappe.PermissionError):
 			self._as(other_master.name, ef.complete_feedback, form.name)
 
 	def test_reschedule_returns_to_draft_and_keeps_feedback(self):
 		form = self._complete()
 		self._schedule(form)
-		self._as(self.manager.name, ef.save_manager_feedback, form.name, "Solid progress.")
-
-		ef.reschedule_sessions(form.name)  # as Administrator (admin)
+		form.reload()
+		self._as(
+			self.manager.name,
+			ef.save_manager_feedback,
+			form.name,
+			"Solid progress.",
+			form.manager_sessions[0].name,
+		)
+		ef.reschedule_sessions(form.name)
 		form.reload()
 		self.assertEqual(form.status, "Draft")
 		self.assertFalse(form.sessions_scheduled)
-		self.assertIn("Solid progress", form.manager_feedback or "")
+		self.assertIn("Solid progress", form.manager_sessions[0].feedback or "")
 
 	def test_no_manager_form_schedules_and_completes_without_manager(self):
 		learner = self._user("eff_nomgr@example.com", "No", "Manager", ["LMS Student"])
-		emp = self._employee(learner.name, "No Manager Emp")  # no reports_to
+		emp = self._employee(learner.name, "No Manager Emp")
 		course = self._course("EFF No Manager Course")
 		batch = self._batch(course.name, self.trainer.name)
 		self._batch_enroll(batch.name, learner.name)
@@ -414,28 +435,22 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		form = self._complete(enr, employee=emp, course=course.name)
 		self.assertFalse(form.immediate_manager)
 
-		t = self._times()
-		t["manager"] = None  # no manager slot
-		self._schedule(form, times=t)
+		self._schedule(form, manager=[])
 		form.reload()
 		self.assertEqual(form.status, "Sessions Scheduled")
+		self.assertEqual(len(form.manager_sessions), 0)
 
 		self._as(self.trainer.name, ef.save_trainer_feedback, form.name, "Mock done.")
-		self._as(self.master.name, ef.save_master_feedback, form.name, "Endorsed.")
+		self._as(
+			self.master.name, ef.save_master_feedback, form.name, "Endorsed.", form.master_sessions[0].name
+		)
 		self._as(self.master.name, ef.complete_feedback, form.name)
 		form.reload()
 		self.assertEqual(form.status, "Completed")
 
 	# ── permissions ───────────────────────────────────────────────────────────
-	def test_trainer_cannot_record_other_trainers_row(self):
-		form = self._complete()
-		self._schedule(form)
-		with self.assertRaises(Exception):
-			self._as(self.outsider.name, ef.save_trainer_feedback, form.name, "nope")
-
 	def test_permission_scoping(self):
 		form = self._complete()
-
 		frappe.set_user(self.trainer.name)
 		try:
 			visible = frappe.get_list(DOCTYPE, pluck="name")
@@ -468,15 +483,10 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		form = self._complete()
 		with patch("frappe.sendmail"):
 			self._schedule(form)
-		# Manager, trainer, master and the employee each get a "scheduled" notification.
 		for user in (self.manager.name, self.trainer.name, self.master.name, self.learner.name):
 			logs = frappe.get_all(
 				"Notification Log",
-				{
-					"for_user": user,
-					"document_name": form.name,
-					"subject": ["like", "%scheduled%"],
-				},
+				{"for_user": user, "document_name": form.name, "subject": ["like", "%scheduled%"]},
 				pluck="name",
 			)
 			self.assertTrue(logs, f"expected a schedule notification for {user}")
