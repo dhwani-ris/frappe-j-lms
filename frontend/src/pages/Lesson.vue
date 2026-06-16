@@ -538,12 +538,6 @@ const progress = createResource({
 	onSuccess(data) {
 		lessonProgress.value = data
 		courseOutline.reload()
-		// On 100% completion the backend auto-creates the Employee Feedback Form. Refresh
-		// the cached user info so the "Employee Feedback" menu item (gated on
-		// has_employee_feedback) appears without needing a manual page reload.
-		if (Number(data) >= 100) {
-			user.reload()
-		}
 	},
 })
 
