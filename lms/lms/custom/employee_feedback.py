@@ -17,7 +17,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, today
+from frappe.utils import cint, format_datetime, get_datetime, today
 from frappe.utils.user import get_users_with_role
 
 from lms.lms.custom.notifications import (
@@ -246,6 +246,90 @@ def create_feedback_form_on_completion(doc, method=None):
 
 	form.insert(ignore_permissions=True)
 	notify_form_created(form)
+
+
+# ---------------------------------------------------------------------------
+# Roster sync — keep the feedback form in step with assignment / manager edits
+# ---------------------------------------------------------------------------
+
+
+def sync_assignment_trainers_to_feedback(batch, new_trainers):
+	"""Reflect an assignment's trainer change in the (non-Completed) feedback form for
+	that batch: add new trainer rows; drop removed trainers that have NOT recorded; keep
+	removed trainers who already recorded. Adding a trainer to an already-scheduled form
+	sends it back to Draft for rescheduling. Returns ``{"unscheduled": bool}``."""
+	if isinstance(new_trainers, str):
+		new_trainers = json.loads(new_trainers or "[]")
+	new_set = list(dict.fromkeys(new_trainers or []))  # de-dup, keep order
+
+	form_name = frappe.db.get_value(DOCTYPE, {"batch": batch, "status": ["!=", "Completed"]})
+	if not form_name:
+		return {"unscheduled": False}
+	form = frappe.get_doc(DOCTYPE, form_name)
+
+	current = {r.trainer for r in form.trainer_feedback}
+	added = [t for t in new_set if t not in current]
+
+	kept, removed = [], []
+	for r in form.trainer_feedback:
+		if r.trainer in new_set or cint(r.recorded):
+			kept.append(r)  # still assigned, or already recorded → keep
+		else:
+			removed.append(r.trainer)
+
+	if not added and not removed:
+		return {"unscheduled": False}
+
+	form.set(
+		"trainer_feedback",
+		[
+			{
+				"trainer": r.trainer,
+				"meeting_datetime": r.meeting_datetime,
+				"feedback": r.feedback,
+				"recorded": r.recorded,
+			}
+			for r in kept
+		]
+		+ [{"trainer": t} for t in added],
+	)
+
+	unscheduled = bool(added) and bool(cint(form.sessions_scheduled))
+	if unscheduled:
+		form.flags.rescheduling = True  # → Draft, sessions_scheduled = 0
+	else:
+		form.flags.syncing_roster = True  # keep schedule; bypass the locked-times guard
+	form.save(ignore_permissions=True)
+
+	for trainer in added:
+		notify_trainer_added(form, trainer)
+	if added:
+		_notify_roster_change(form)
+	return {"unscheduled": unscheduled}
+
+
+def sync_manager_to_feedback(employee, new_reports_to):
+	"""Reflect a manager change on the employee's non-Completed feedback forms: update
+	``immediate_manager`` only while no manager feedback has been recorded; keep the
+	scheduled manager session times for the new manager. Removing the manager clears the
+	manager sessions."""
+	new_manager = new_reports_to or None
+	forms = frappe.get_all(
+		DOCTYPE, {"employee": employee, "status": ["!=", "Completed"]}, pluck="name"
+	)
+	for fname in forms:
+		form = frappe.get_doc(DOCTYPE, fname)
+		if any(cint(s.recorded) for s in form.manager_sessions):
+			continue  # manager feedback already saved — leave it untouched
+		if (form.immediate_manager or None) == new_manager:
+			continue
+		form.immediate_manager = new_manager
+		if not new_manager:
+			form.set("manager_sessions", [])  # no manager to attend the sessions
+		form.flags.syncing_roster = True
+		form.save(ignore_permissions=True)
+		if new_manager:
+			notify_manager_assigned(form)
 
 
 # ---------------------------------------------------------------------------
@@ -711,6 +795,64 @@ def notify_completed(form):
 			"The feedback form for <strong>{0}</strong> on <strong>{1}</strong> "
 			"is now complete."
 		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def notify_trainer_added(form, trainer):
+	"""A trainer was added to the assignment after the form already existed."""
+	employee_name, course_title, from_user = _context(form)
+	_fan_out(
+		[trainer],
+		from_user,
+		_("You've been added as a trainer for {0}").format(employee_name),
+		_(
+			"You have been added as a trainer for <strong>{0}</strong> ({1}). The master "
+			"trainer will schedule your feedback session."
+		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def _notify_roster_change(form):
+	"""Nudge the master trainer / HR that the trainer roster changed and the sessions
+	need (re)scheduling."""
+	employee_name, course_title, from_user = _context(form)
+	masters = [form.master_trainer] if form.master_trainer else _get_master_trainers()
+	recipients = list(masters) + list(get_users_with_role(HR_ROLE))
+	_fan_out(
+		recipients,
+		from_user,
+		_("Trainer roster changed for {0}").format(employee_name),
+		_(
+			"The trainer roster for <strong>{0}</strong> ({1}) has changed. Please "
+			"(re)schedule the feedback sessions."
+		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def notify_manager_assigned(form):
+	"""A new immediate manager was assigned to an in-flight feedback form."""
+	manager_user = _manager_user(form)
+	if not manager_user:
+		return
+	employee_name, course_title, from_user = _context(form)
+	times = [s.meeting_datetime for s in form.manager_sessions if s.meeting_datetime]
+	when = (
+		" " + _("Scheduled: {0}.").format(", ".join(format_datetime(t) for t in times))
+		if times
+		else ""
+	)
+	_fan_out(
+		[manager_user],
+		from_user,
+		_("You are now the manager for {0}'s feedback").format(employee_name),
+		_(
+			"You are now the immediate manager for <strong>{0}</strong>'s feedback on "
+			"<strong>{1}</strong>."
+		).format(employee_name, course_title)
+		+ when,
 		form.name,
 	)
 

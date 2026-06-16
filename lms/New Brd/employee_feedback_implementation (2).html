@@ -98,6 +98,8 @@
 
   <div class="banner"><b>Multiple manager / master sessions.</b> The manager and the master trainer can each have <b>several</b> feedback sessions (each its own meeting + feedback), held in the <code>manager_sessions</code> / <code>master_sessions</code> child tables (new <code>Employee Feedback Session</code> child). The MT adds/removes them while scheduling; a role is "done" only when <b>all</b> its sessions are recorded. Existing forms are migrated by <code>patches/v2_0/migrate_feedback_to_sessions.py</code>.</div>
 
+  <div class="banner"><b>Roster stays in sync.</b> Editing an assignment's <b>trainers</b> (<code>/assign-course</code>) or changing an employee's <b>manager</b> (<code>/employees/:id</code>) now flows into the live feedback form — see §9. Adding a trainer reschedules; a recorded trainer is never dropped; the manager is only re-pointed while no manager feedback exists.</div>
+
   <!-- 1 OVERVIEW -->
   <section class="block">
     <h2>1 · Overview</h2>
@@ -297,6 +299,27 @@
       <p><b>10.</b> <span class="new">NEW</span> <b>Lock &amp; reschedule:</b> confirmed times are locked; the MT/admin can <b>Reschedule</b> (back to Draft, feedback preserved, everyone re-notified).</p>
       <p><b>11.</b> <span class="new">NEW</span> <b>Multiple manager / master sessions:</b> the manager and the master trainer can each have several sessions (own meeting + feedback) in the <code>manager_sessions</code> / <code>master_sessions</code> tables (≥1 each, manager skipped if none). The group order &amp; ≥15-min gap apply across all of them, and a role is done only when <b>all</b> its sessions are recorded. Existing forms are migrated to one session row each.</p>
     </div>
+  </section>
+
+  <!-- 9 ROSTER MAINTENANCE -->
+  <section class="block">
+    <h2>9 · Roster Maintenance <span class="new">NEW</span></h2>
+    <p class="note">The roster can change after a form exists. Both paths sync the <b>(employee, course)</b> non-Completed form; Completed forms are never touched. If no form exists yet, the future auto-created form simply picks up the current roster.</p>
+
+    <h3>Edit trainers — <code>/assign-course</code></h3>
+    <p>An <b>"Edit Trainers"</b> action on each assignment row opens a multi-select dialog (pre-filled with the current trainers) → <code>course_assignment.update_assignment_trainers(batch, trainers)</code>, which rewrites the batch's <code>Course Instructor</code> rows and calls <code>employee_feedback.sync_assignment_trainers_to_feedback</code>.</p>
+    <ul class="clean">
+      <li><b>Add a trainer</b> → a <code>trainer_feedback</code> row is added; if the form was already scheduled it drops back to <b>Draft</b> for rescheduling. The new trainer is notified and the master trainer / HR are nudged to (re)schedule.</li>
+      <li><b>Remove a trainer</b> → the row (and its slot) is dropped <b>only if not yet recorded</b>; a trainer who already gave feedback is <b>kept</b>. Removal-only changes keep the existing schedule (a <code>syncing_roster</code> flag bypasses the locked-times guard).</li>
+    </ul>
+
+    <h3>Change manager — <code>/employees/:id</code></h3>
+    <p><code>dashboard_api.update_employee_manager</code> sets <code>Employee.reports_to</code> then calls <code>employee_feedback.sync_manager_to_feedback</code>:</p>
+    <ul class="clean">
+      <li>On each non-Completed form, if <b>no</b> manager session is recorded → set <code>immediate_manager</code> to the new manager (keeping the scheduled manager session times); the new manager is notified. If manager feedback is already recorded → leave it unchanged.</li>
+      <li><b>Removing</b> the manager clears <code>manager_sessions</code> (no one to attend).</li>
+      <li><code>immediate_manager</code> uses <code>fetch_if_empty: 1</code> <span class="chg">CHANGED</span> so it's pinned at creation and isn't silently re-fetched on later saves — without this the "don't change once feedback is saved" rule couldn't hold.</li>
+    </ul>
   </section>
 
 </div>

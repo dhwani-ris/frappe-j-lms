@@ -78,6 +78,35 @@ def assign_course_to_student(student_email, course, assigned_by=None, trainers=N
 
 
 @frappe.whitelist()
+def update_assignment_trainers(batch, trainers):
+	"""Replace the trainers (Course Instructor rows) on an assignment's micro-batch, and
+	sync the change into the employee's feedback form (see
+	employee_feedback.sync_assignment_trainers_to_feedback)."""
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
+
+	if isinstance(trainers, str):
+		import json
+
+		trainers = json.loads(trainers) if trainers else []
+	trainers = list(dict.fromkeys(trainers or []))  # de-dup, keep order
+
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(f"Batch {batch} does not exist")
+	for trainer_email in trainers:
+		if not frappe.db.exists("User", trainer_email):
+			frappe.throw(f"User {trainer_email} does not exist")
+
+	batch_doc = frappe.get_doc("LMS Batch", batch)
+	batch_doc.set("instructors", [{"instructor": t} for t in trainers])
+	batch_doc.save(ignore_permissions=True)
+
+	from lms.lms.custom.employee_feedback import sync_assignment_trainers_to_feedback
+
+	result = sync_assignment_trainers_to_feedback(batch, trainers) or {}
+	return {"message": "Trainers updated successfully", **result}
+
+
+@frappe.whitelist()
 def unassign_course_from_student(student_email, course):
 	"""Remove course assignment from a student by deleting the auto-batch and enrollments."""
 	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])

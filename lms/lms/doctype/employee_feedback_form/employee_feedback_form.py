@@ -70,6 +70,7 @@ class EmployeeFeedbackForm(Document):
 			and cint(before.sessions_scheduled)
 			and not self.flags.get("scheduling")
 			and not self.flags.get("rescheduling")
+			and not self.flags.get("syncing_roster")
 			and self._meeting_times_changed(before)
 		):
 			frappe.throw(

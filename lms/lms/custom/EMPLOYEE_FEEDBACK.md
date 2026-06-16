@@ -234,6 +234,32 @@ Status reaches `Manager Feedback Added` only once **all** manager sessions are r
 
 ---
 
+## 7a. Roster maintenance — editing trainers & changing the manager
+
+The assignment roster can change after a form exists; both paths keep the **(employee,
+course)** non-Completed form in sync (Completed forms are never touched).
+
+**Edit trainers** (`/assign-course` → "Edit Trainers" dialog → `course_assignment.update_assignment_trainers(batch, trainers)`):
+- Rewrites the batch's `Course Instructor` rows, then calls
+  `employee_feedback.sync_assignment_trainers_to_feedback(batch, trainers)`.
+- **Add** a trainer → a `trainer_feedback` row is added. If the form was already
+  **scheduled**, it drops back to **Draft** (`flags.rescheduling`) so the MT reschedules;
+  the new trainer is notified (`notify_trainer_added`) and the MT/HR are nudged
+  (`_notify_roster_change`).
+- **Remove** a trainer → drop the row (and its slot) **only if it isn't `recorded`**; a
+  trainer who already recorded is **kept**. Removal-only changes use `flags.syncing_roster`
+  to keep the existing schedule (bypassing the locked-times guard).
+
+**Change manager** (`/employees/:id` → "Change Manager" → `dashboard_api.update_employee_manager`):
+- After setting `Employee.reports_to`, calls `employee_feedback.sync_manager_to_feedback(employee, reports_to)`.
+- For each non-Completed form: if **no** `manager_sessions` row is recorded, set
+  `immediate_manager` to the new manager (keeping the scheduled manager session times);
+  the new manager is notified (`notify_manager_assigned`). If a manager session is already
+  recorded, the form is left unchanged. **Removing** the manager clears `manager_sessions`.
+- `immediate_manager` carries **`fetch_if_empty: 1`** so `fetch_from: employee.reports_to`
+  only populates it at creation — later form saves don't silently re-sync it, which is what
+  lets the "don't change once feedback is saved" rule hold.
+
 ## 8. Permissions & visibility
 
 Wired in `hooks.py`:

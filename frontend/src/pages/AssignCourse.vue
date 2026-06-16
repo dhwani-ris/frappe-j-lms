@@ -201,15 +201,24 @@
 										</div>
 									</td>
 									<td class="px-6 py-4 text-center">
-										<Button
-											variant="ghost"
-											size="sm"
-											theme="red"
-											:loading="unassignResource.loading"
-											@click="unassignCourse(assignment)"
-										>
-											{{ __('Unassign') }}
-										</Button>
+										<div class="flex items-center justify-center gap-1">
+											<Button
+												variant="ghost"
+												size="sm"
+												@click="openEditTrainers(assignment)"
+											>
+												{{ __('Edit Trainers') }}
+											</Button>
+											<Button
+												variant="ghost"
+												size="sm"
+												theme="red"
+												:loading="unassignResource.loading"
+												@click="unassignCourse(assignment)"
+											>
+												{{ __('Unassign') }}
+											</Button>
+										</div>
 									</td>
 								</tr>
 							</tbody>
@@ -288,6 +297,49 @@
 				</div>
 			</template>
 		</Dialog>
+
+		<Dialog
+			v-model="showEditTrainersDialog"
+			:options="{
+				title: __('Edit Trainers'),
+				actions: [
+					{
+						label: __('Cancel'),
+						variant: 'ghost',
+					},
+					{
+						label: __('Save'),
+						variant: 'solid',
+						loading: updateTrainersResource.loading,
+						onClick: confirmEditTrainers,
+					},
+				],
+			}"
+		>
+			<template #body-content>
+				<div v-if="assignmentToEdit" class="space-y-3">
+					<p class="text-ink-gray-7">
+						{{ __('Trainers for') }}
+						<strong>{{ assignmentToEdit.course_title }}</strong>
+						{{ __('assigned to') }}
+						<strong>{{ assignmentToEdit.student_name }}</strong>
+					</p>
+					<Autocomplete
+						v-model="editTrainers"
+						:options="editTrainerOptions"
+						:placeholder="__('Select one or more trainers...')"
+						:multiple="true"
+					/>
+					<p class="text-xs text-ink-gray-5">
+						{{
+							__(
+								'Adding a trainer to an already-scheduled feedback form sends it back for rescheduling. Removing a trainer who already gave feedback keeps their feedback.'
+							)
+						}}
+					</p>
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -314,6 +366,9 @@ const startDate = ref(dayjs().format('YYYY-MM-DD'))
 const endDate = ref(dayjs().add(3, 'month').format('YYYY-MM-DD'))
 const showUnassignDialog = ref(false)
 const assignmentToUnassign = ref(null)
+const showEditTrainersDialog = ref(false)
+const assignmentToEdit = ref(null)
+const editTrainers = ref([])
 const searchQuery = ref('')
 const courseFilter = ref('')
 const trainerFilter = ref('')
@@ -503,6 +558,63 @@ const assignResource = createResource({
 const unassignResource = createResource({
 	url: 'lms.lms.custom.course_assignment.unassign_course_from_student',
 })
+
+const updateTrainersResource = createResource({
+	url: 'lms.lms.custom.course_assignment.update_assignment_trainers',
+})
+
+// Instructors of the assignment's course — loaded when the Edit Trainers dialog opens.
+const editCourseInstructors = createResource({
+	url: 'lms.lms.api.get_course_instructors',
+})
+
+// Only trainers that belong to the course (its instructors) or are already assigned to
+// this assignment may be chosen.
+const editTrainerOptions = computed(() => {
+	if (!allUsers.data) return []
+	const emails = new Set()
+	;(editCourseInstructors.data || []).forEach((i) => emails.add(i.instructor))
+	;(assignmentToEdit.value?.trainers || []).forEach((t) => emails.add(t))
+	return [...emails].map((email) => ({
+		label: allUsers.data[email]?.full_name || email,
+		value: email,
+	}))
+})
+
+const openEditTrainers = (assignment) => {
+	assignmentToEdit.value = assignment
+	editTrainers.value = (assignment.trainers || []).map((email) => ({
+		label: (allUsers.data && allUsers.data[email]?.full_name) || email,
+		value: email,
+	}))
+	editCourseInstructors.submit({ course: assignment.course })
+	showEditTrainersDialog.value = true
+}
+
+const confirmEditTrainers = () => {
+	if (!assignmentToEdit.value) return
+	updateTrainersResource.submit(
+		{
+			batch: assignmentToEdit.value.batch,
+			trainers: (editTrainers.value || []).map((t) => t.value),
+		},
+		{
+			onSuccess(data) {
+				let msg = data?.message || __('Trainers updated')
+				if (data?.unscheduled) {
+					msg += '. ' + __('Feedback sessions need rescheduling.')
+				}
+				toast.success(msg)
+				showEditTrainersDialog.value = false
+				assignmentToEdit.value = null
+				allAssignments.reload()
+			},
+			onError(err) {
+				toast.error(err.messages?.[0] || __('Failed to update trainers'))
+			},
+		}
+	)
+}
 
 const unassignCourse = (assignment) => {
 	assignmentToUnassign.value = assignment

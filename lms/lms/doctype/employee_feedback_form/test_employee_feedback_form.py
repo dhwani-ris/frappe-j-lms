@@ -7,6 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, now_datetime, nowdate
 
+from lms.lms.custom import course_assignment as ca
 from lms.lms.custom import employee_feedback as ef
 from lms.lms.custom.notifications import MASTER_TRAINER_ROLE_PROFILE
 
@@ -52,6 +53,9 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		self.emp_learner = self._employee(
 			self.learner.name, "Eff Learner", reports_to=self.emp_manager
 		)
+		# Pin the baseline reporting line (a prior manager-sync test may have changed it,
+		# and commits from hooks can leak across the suite).
+		frappe.db.set_value("Employee", self.emp_learner, "reports_to", self.emp_manager)
 
 		self.course = self._course("EFF Test Course")
 		self.batch = self._batch(self.course.name, self.trainer.name)
@@ -490,3 +494,123 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 				pluck="name",
 			)
 			self.assertTrue(logs, f"expected a schedule notification for {user}")
+
+	# ── edit trainers ─────────────────────────────────────────────────────────
+	def _schedule_spaced(self, form):
+		"""Schedule a (possibly multi-trainer) form: manager → trainers → master, 20 min apart."""
+		base = add_to_date(now_datetime(), days=1)
+		slot = [0]
+
+		def at():
+			t = add_to_date(base, minutes=slot[0] * 20)
+			slot[0] += 1
+			return t
+
+		mt = [{"meeting_datetime": at()}] if form.immediate_manager else []
+		tt = [{"trainer": r.trainer, "meeting_datetime": at()} for r in form.trainer_feedback]
+		xt = [{"meeting_datetime": at()}]
+		self._as(self.master.name, ef.schedule_sessions, form.name, mt, xt, tt)
+
+	def test_add_trainer_unschedules_scheduled_form(self):
+		form = self._complete()
+		self._schedule(form)
+		trainer2 = self._user("eff_trainer2@example.com", "Eff", "Trainer2", ["LMS Trainer"])
+		with patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name, trainer2.name])
+		form.reload()
+		self.assertEqual(
+			{r.trainer for r in form.trainer_feedback}, {self.trainer.name, trainer2.name}
+		)
+		self.assertEqual(form.status, "Draft")
+		self.assertFalse(form.sessions_scheduled)
+
+	def test_remove_unrecorded_trainer_drops_and_keeps_schedule(self):
+		form = self._complete()
+		trainer2 = self._user("eff_trainer2@example.com", "Eff", "Trainer2", ["LMS Trainer"])
+		with patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name, trainer2.name])
+		form.reload()
+		self._schedule_spaced(form)
+		form.reload()
+		self.assertTrue(form.sessions_scheduled)
+		# Remove trainer2 (unrecorded) — row dropped, form stays scheduled.
+		with patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name])
+		form.reload()
+		self.assertEqual({r.trainer for r in form.trainer_feedback}, {self.trainer.name})
+		self.assertTrue(form.sessions_scheduled)
+
+	def test_remove_recorded_trainer_is_kept(self):
+		form = self._complete()
+		self._schedule(form)
+		self._as(self.trainer.name, ef.save_trainer_feedback, form.name, "Mock done.")
+		with patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [])  # remove all
+		form.reload()
+		# Trainer already recorded → kept despite removal from the assignment.
+		self.assertEqual({r.trainer for r in form.trainer_feedback}, {self.trainer.name})
+
+	def test_update_assignment_trainers_updates_batch_and_form(self):
+		form = self._complete()
+		trainer2 = self._user("eff_trainer2@example.com", "Eff", "Trainer2", ["LMS Trainer"])
+		with patch("frappe.sendmail"):
+			self._as(
+				self.master.name,
+				ca.update_assignment_trainers,
+				self.batch.name,
+				[self.trainer.name, trainer2.name],
+			)
+		instructors = set(
+			frappe.get_all(
+				"Course Instructor",
+				{"parent": self.batch.name, "parenttype": "LMS Batch"},
+				pluck="instructor",
+			)
+		)
+		self.assertEqual(instructors, {self.trainer.name, trainer2.name})
+		form.reload()
+		self.assertEqual(
+			{r.trainer for r in form.trainer_feedback}, {self.trainer.name, trainer2.name}
+		)
+
+	# ── manager sync ──────────────────────────────────────────────────────────
+	def _other_manager(self):
+		u = self._user("eff_mgr2@example.com", "Eff", "Mgr2", ["LMS Manager"])
+		return self._employee(u.name, "Eff Manager2")
+
+	def test_manager_change_updates_when_no_manager_feedback(self):
+		form = self._complete()
+		self._schedule(form)
+		new_emp = self._other_manager()
+		# Mirror the real flow: Employee.reports_to is set first, then the sync runs.
+		frappe.db.set_value("Employee", self.emp_learner, "reports_to", new_emp)
+		with patch("frappe.sendmail"):
+			ef.sync_manager_to_feedback(self.emp_learner, new_emp)
+		form.reload()
+		self.assertEqual(form.immediate_manager, new_emp)
+
+	def test_manager_change_skipped_when_manager_feedback_recorded(self):
+		form = self._complete()
+		self._schedule(form)
+		form.reload()
+		self._as(
+			self.manager.name,
+			ef.save_manager_feedback,
+			form.name,
+			"Manager note.",
+			form.manager_sessions[0].name,
+		)
+		new_emp = self._other_manager()
+		frappe.db.set_value("Employee", self.emp_learner, "reports_to", new_emp)
+		ef.sync_manager_to_feedback(self.emp_learner, new_emp)
+		form.reload()
+		self.assertEqual(form.immediate_manager, self.emp_manager)  # unchanged
+
+	def test_manager_removed_clears_sessions(self):
+		form = self._complete()
+		self._schedule(form)
+		frappe.db.set_value("Employee", self.emp_learner, "reports_to", None)
+		ef.sync_manager_to_feedback(self.emp_learner, None)
+		form.reload()
+		self.assertFalse(form.immediate_manager)
+		self.assertEqual(len(form.manager_sessions), 0)
