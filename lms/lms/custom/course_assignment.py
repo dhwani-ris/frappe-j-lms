@@ -1,4 +1,7 @@
+import json
+
 import frappe
+from frappe import _
 from frappe.utils import today, add_months
 
 
@@ -85,19 +88,19 @@ def update_assignment_trainers(batch, trainers):
 	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
 
 	if isinstance(trainers, str):
-		import json
-
 		trainers = json.loads(trainers) if trainers else []
 	trainers = list(dict.fromkeys(trainers or []))  # de-dup, keep order
 
 	if not frappe.db.exists("LMS Batch", batch):
-		frappe.throw(f"Batch {batch} does not exist")
+		frappe.throw(_("Batch {0} does not exist").format(batch))
 	for trainer_email in trainers:
 		if not frappe.db.exists("User", trainer_email):
-			frappe.throw(f"User {trainer_email} does not exist")
+			frappe.throw(_("User {0} does not exist").format(trainer_email))
 
 	batch_doc = frappe.get_doc("LMS Batch", batch)
 	batch_doc.set("instructors", [{"instructor": t} for t in trainers])
+	# ignore_permissions: role verified via frappe.only_for() above; bypass per-doc write
+	# check (the micro-batch is system-managed, not user-owned).
 	batch_doc.save(ignore_permissions=True)
 
 	from lms.lms.custom.employee_feedback import sync_assignment_trainers_to_feedback

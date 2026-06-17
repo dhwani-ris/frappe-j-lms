@@ -76,7 +76,11 @@
 					</div>
 					<div v-for="(s, i) in sched.manager" :key="i" class="mb-2 flex items-center gap-2">
 						<input type="datetime-local" v-model="s.dt" class="form-input w-full" />
-						<Button variant="ghost" @click="removeRow('manager', i)">
+						<Button
+							variant="ghost"
+							:disabled="sched.manager.length === 1"
+							@click="removeRow('manager', i)"
+						>
 							<Trash2 class="size-4 text-ink-gray-6" />
 						</Button>
 					</div>
@@ -103,7 +107,11 @@
 					</div>
 					<div v-for="(s, i) in sched.master" :key="i" class="mb-2 flex items-center gap-2">
 						<input type="datetime-local" v-model="s.dt" class="form-input w-full" />
-						<Button variant="ghost" @click="removeRow('master', i)">
+						<Button
+							variant="ghost"
+							:disabled="sched.master.length === 1"
+							@click="removeRow('master', i)"
+						>
 							<Trash2 class="size-4 text-ink-gray-6" />
 						</Button>
 					</div>

@@ -324,7 +324,15 @@
 						{{ __('assigned to') }}
 						<strong>{{ assignmentToEdit.student_name }}</strong>
 					</p>
+					<div
+						v-if="editCourseInstructors.loading"
+						class="flex items-center gap-2 text-xs text-ink-gray-5"
+					>
+						<LoadingIndicator class="size-3" />
+						{{ __('Loading course trainers...') }}
+					</div>
 					<Autocomplete
+						v-else
 						v-model="editTrainers"
 						:options="editTrainerOptions"
 						:placeholder="__('Select one or more trainers...')"

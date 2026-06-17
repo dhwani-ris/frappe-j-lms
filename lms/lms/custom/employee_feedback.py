@@ -253,11 +253,13 @@ def create_feedback_form_on_completion(doc, method=None):
 # ---------------------------------------------------------------------------
 
 
-def sync_assignment_trainers_to_feedback(batch, new_trainers):
+def sync_assignment_trainers_to_feedback(batch, new_trainers) -> dict:
 	"""Reflect an assignment's trainer change in the (non-Completed) feedback form for
 	that batch: add new trainer rows; drop removed trainers that have NOT recorded; keep
 	removed trainers who already recorded. Adding a trainer to an already-scheduled form
-	sends it back to Draft for rescheduling. Returns ``{"unscheduled": bool}``."""
+	sends it back to Draft for rescheduling. Returns ``{"unscheduled": bool}``.
+
+	Called only from the role-guarded ``course_assignment.update_assignment_trainers``."""
 	if isinstance(new_trainers, str):
 		new_trainers = json.loads(new_trainers or "[]")
 	new_set = list(dict.fromkeys(new_trainers or []))  # de-dup, keep order
@@ -299,6 +301,8 @@ def sync_assignment_trainers_to_feedback(batch, new_trainers):
 		form.flags.rescheduling = True  # → Draft, sessions_scheduled = 0
 	else:
 		form.flags.syncing_roster = True  # keep schedule; bypass the locked-times guard
+	# ignore_permissions: caller (update_assignment_trainers) is role-guarded via
+	# frappe.only_for(); this is a system-driven roster sync, not a user edit.
 	form.save(ignore_permissions=True)
 
 	for trainer in added:
@@ -308,11 +312,13 @@ def sync_assignment_trainers_to_feedback(batch, new_trainers):
 	return {"unscheduled": unscheduled}
 
 
-def sync_manager_to_feedback(employee, new_reports_to):
+def sync_manager_to_feedback(employee, new_reports_to) -> None:
 	"""Reflect a manager change on the employee's non-Completed feedback forms: update
 	``immediate_manager`` only while no manager feedback has been recorded; keep the
 	scheduled manager session times for the new manager. Removing the manager clears the
-	manager sessions."""
+	manager sessions.
+
+	Called only from the HR-guarded ``dashboard_api.update_employee_manager``."""
 	new_manager = new_reports_to or None
 	forms = frappe.get_all(
 		DOCTYPE, {"employee": employee, "status": ["!=", "Completed"]}, pluck="name"
@@ -327,6 +333,8 @@ def sync_manager_to_feedback(employee, new_reports_to):
 		if not new_manager:
 			form.set("manager_sessions", [])  # no manager to attend the sessions
 		form.flags.syncing_roster = True
+		# ignore_permissions: caller (update_employee_manager) is HR-guarded via
+		# frappe.only_for(); this is a system-driven roster sync, not a user edit.
 		form.save(ignore_permissions=True)
 		if new_manager:
 			notify_manager_assigned(form)
@@ -432,9 +440,12 @@ def reschedule_sessions(name):
 
 
 def _session_row(form, table_field, row_name):
+	if not row_name:
+		frappe.throw(_("A feedback session must be selected."))
 	row = next((r for r in form.get(table_field) if r.name == row_name), None)
 	if not row:
-		frappe.throw(_("No feedback session found for {0}.").format(row_name))
+		# Generic message — never echo the client-supplied row name back.
+		frappe.throw(_("Invalid or missing feedback session."))
 	return row
 
 
@@ -562,6 +573,21 @@ def list_my_feedback_forms():
 	)
 	scheduler = can_schedule(user)
 
+	# Batch the manager lookups (user_id + name) to avoid an N+1 over Employee.
+	manager_ids = list({f.immediate_manager for f in forms if f.immediate_manager})
+	manager_map = {
+		e.name: e
+		for e in (
+			frappe.get_all(
+				"Employee",
+				{"name": ["in", manager_ids]},
+				["name", "user_id", "employee_name"],
+			)
+			if manager_ids
+			else []
+		)
+	}
+
 	def _has_unrecorded(form_name, parentfield):
 		return bool(
 			frappe.db.exists(
@@ -571,16 +597,12 @@ def list_my_feedback_forms():
 		)
 
 	for f in forms:
-		manager_user = _employee_user(f.immediate_manager)
-		f["is_manager"] = manager_user == user
+		manager = manager_map.get(f.immediate_manager)
+		f["is_manager"] = bool(manager) and manager.user_id == user
 		f["is_trainer"] = f["name"] in my_trainer_parents
 		f["is_master"] = bool(f.master_trainer) and f.master_trainer == user
 		f["can_schedule"] = scheduler
-		f["immediate_manager_name"] = (
-			frappe.db.get_value("Employee", f.immediate_manager, "employee_name")
-			if f.immediate_manager
-			else None
-		)
+		f["immediate_manager_name"] = manager.employee_name if manager else None
 
 		pending = False
 		if f["status"] != "Completed":
