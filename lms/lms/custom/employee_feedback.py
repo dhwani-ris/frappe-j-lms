@@ -20,6 +20,7 @@ from frappe import _
 from frappe.utils import cint, format_datetime, get_datetime, today
 from frappe.utils.user import get_users_with_role
 
+from lms.lms.custom.feedback_calendar import sync_feedback_calendar
 from lms.lms.custom.notifications import (
 	HR_ROLE,
 	_get_master_trainers,
@@ -309,6 +310,7 @@ def sync_assignment_trainers_to_feedback(batch, new_trainers) -> dict:
 		notify_trainer_added(form, trainer)
 	if added:
 		_notify_roster_change(form)
+	sync_feedback_calendar(form)  # cancel removed trainers' events / cancel all if unscheduled
 	return {"unscheduled": unscheduled}
 
 
@@ -336,6 +338,7 @@ def sync_manager_to_feedback(employee, new_reports_to) -> None:
 		# ignore_permissions: caller (update_employee_manager) is HR-guarded via
 		# frappe.only_for(); this is a system-driven roster sync, not a user edit.
 		form.save(ignore_permissions=True)
+		sync_feedback_calendar(form)  # update manager events' attendee / cancel if removed
 		if new_manager:
 			notify_manager_assigned(form)
 
@@ -419,6 +422,7 @@ def schedule_sessions(name, manager_times=None, master_times=None, trainer_times
 	form.flags.scheduling = True
 	form.save(ignore_permissions=True)  # validate_schedule() enforces order/gap/future
 	notify_feedback_scheduled(form)
+	sync_feedback_calendar(form)
 	return _form_payload(form)
 
 
@@ -436,6 +440,7 @@ def reschedule_sessions(name):
 		frappe.throw(_("Reopen the completed form before rescheduling."))
 	form.flags.rescheduling = True
 	form.save(ignore_permissions=True)
+	sync_feedback_calendar(form)  # unscheduled → cancel the session events
 	return _form_payload(form)
 
 
@@ -525,6 +530,7 @@ def reopen_feedback(name):
 		)
 	form.flags.reopening = True
 	form.save(ignore_permissions=True)
+	sync_feedback_calendar(form)  # back to Draft → cancel the session events
 	return _form_payload(form)
 
 

@@ -30,6 +30,7 @@ record feedback; the master trainer marks it complete.
 | Trainer child | `lms/lms/doctype/employee_feedback_trainer/` (`.json`, `.py`) |
 | Session child (manager/master) | `lms/lms/doctype/employee_feedback_session/` (`.json`, `.py`) |
 | Backend logic / API | `lms/lms/custom/employee_feedback.py` |
+| Calendar sync | `lms/lms/custom/feedback_calendar.py` (+ Event custom fields via `install.setup_feedback_event_custom_fields`) |
 | Data migration | `lms/patches/v2_0/migrate_feedback_to_sessions.py` (in `patches.txt`, post-model-sync) |
 | Scheduling notification | `lms/lms/custom/notifications.py` (`notify_feedback_scheduled`) |
 | Hooks (events + perms) | `lms/hooks.py` |
@@ -259,6 +260,33 @@ course)** non-Completed form in sync (Completed forms are never touched).
 - `immediate_manager` carries **`fetch_if_empty: 1`** so `fetch_from: employee.reports_to`
   only populates it at creation — later form saves don't silently re-sync it, which is what
   lets the "don't change once feedback is saved" rule hold.
+
+## 7b. Calendar sync (Google Calendar)
+
+Each scheduled session is mirrored as a Frappe **Event** that invites the **reviewer + the
+employee** (15-minute block, no video link), reusing Frappe's built-in Event → Google
+Calendar push. Module: `lms/lms/custom/feedback_calendar.py`.
+
+- **`sync_feedback_calendar(form)`** — idempotent reconcile, fully guarded (a calendar/Google
+  failure is logged, never breaks the feedback flow). Events are keyed by `custom_feedback_key`
+  (`manager:<idx>` / `trainer:<user>` / `master:<idx>`) and back-linked via the
+  **`custom_feedback_form`** Custom Field on Event (added by
+  `install.setup_feedback_event_custom_fields`, wired into `after_sync` + `after_migrate`).
+  - Creates new session events; **updates** changed ones in place (matched by key); **cancels**
+    (deletes) ones no longer present. If `sessions_scheduled` is false (Draft / reopened) it
+    cancels **all** the form's events.
+- **Organizer / account:** `_resolve_google_calendar(master_trainer)` prefers a `Google Calendar`
+  connected by the scheduling MT (push enabled) so the MT organizes; else any push-enabled
+  calendar (site default). If none is connected, the Event is still created (so it shows on the
+  desk Calendar) with **sync off** — no error. Google emails the invites to attendees on any
+  provider; a User's name *is* their email, so `event_participants.email` = the user id.
+- **Call sites** (in `employee_feedback.py`, after save): `schedule_sessions` (create/update +
+  invites), `reschedule_sessions` / `reopen_feedback` (→ Draft ⇒ cancel all), 
+  `sync_assignment_trainers_to_feedback` (cancel a removed trainer's event), and
+  `sync_manager_to_feedback` (update the manager event's attendee, or cancel when the manager is
+  removed). Not called from the feedback-text saves (times don't change there).
+- **Prerequisite:** connect a **Google Calendar** (OAuth) with `push_to_google_calendar=1`
+  (ideally the MT's). Without it, sessions only populate the in-app desk Calendar.
 
 ## 8. Permissions & visibility
 

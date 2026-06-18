@@ -32,6 +32,10 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		)
 		if emps:
 			for name in frappe.get_all(DOCTYPE, {"employee": ["in", emps]}, pluck="name"):
+				for ev in frappe.get_all("Event", {"custom_feedback_form": name}, pluck="name"):
+					# Neutralise Google sync so deletion never calls the (token-less) account.
+					frappe.db.set_value("Event", ev, "sync_with_google_calendar", 0, update_modified=False)
+					frappe.delete_doc("Event", ev, force=True, ignore_permissions=True)
 				frappe.delete_doc(DOCTYPE, name, force=True, ignore_permissions=True)
 			frappe.db.commit()
 
@@ -40,6 +44,14 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# No real Google account in tests — keep all calendar events sync-off (the dev site
+		# has a token-less Google Calendar that would otherwise raise on Event save/delete).
+		gcal_patch = patch(
+			"lms.lms.custom.feedback_calendar._resolve_google_calendar", return_value=None
+		)
+		gcal_patch.start()
+		self.addCleanup(gcal_patch.stop)
+
 		self.company = self._company()
 		self._cleanup_forms()
 
@@ -614,3 +626,76 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		form.reload()
 		self.assertFalse(form.immediate_manager)
 		self.assertEqual(len(form.manager_sessions), 0)
+
+	# ── calendar sync ─────────────────────────────────────────────────────────
+	def _events(self, form):
+		return frappe.get_all(
+			"Event", {"custom_feedback_form": form.name}, ["name", "custom_feedback_key"]
+		)
+
+	def _event_emails(self, event_name):
+		return set(
+			frappe.get_all(
+				"Event Participants", {"parent": event_name, "parenttype": "Event"}, pluck="email"
+			)
+		)
+
+	def _no_google(self):
+		# Force calendar events to be created without Google push (no real account in tests).
+		return patch("lms.lms.custom.feedback_calendar._resolve_google_calendar", return_value=None)
+
+	def test_calendar_events_created_on_schedule(self):
+		form = self._complete()
+		with self._no_google(), patch("frappe.sendmail"):
+			self._schedule(form)
+		evs = self._events(form)
+		keys = {e.custom_feedback_key for e in evs}
+		self.assertEqual(keys, {"manager:0", f"trainer:{self.trainer.name}", "master:0"})
+		by_key = {e.custom_feedback_key: e.name for e in evs}
+		emails = self._event_emails(by_key[f"trainer:{self.trainer.name}"])
+		self.assertIn(self.trainer.name, emails)  # reviewer
+		self.assertIn(self.learner.name, emails)  # employee
+
+	def test_calendar_events_cancelled_on_reschedule(self):
+		form = self._complete()
+		with self._no_google(), patch("frappe.sendmail"):
+			self._schedule(form)
+			self.assertTrue(self._events(form))
+			ef.reschedule_sessions(form.name)
+		self.assertEqual(self._events(form), [])
+
+	def test_calendar_event_cancelled_when_trainer_removed(self):
+		form = self._complete()
+		trainer2 = self._user("eff_trainer2@example.com", "Eff", "Trainer2", ["LMS Trainer"])
+		with self._no_google(), patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name, trainer2.name])
+			form.reload()
+			self._schedule_spaced(form)
+			self.assertIn(
+				f"trainer:{trainer2.name}", {e.custom_feedback_key for e in self._events(form)}
+			)
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name])
+		keys = {e.custom_feedback_key for e in self._events(form)}
+		self.assertNotIn(f"trainer:{trainer2.name}", keys)
+		self.assertIn(f"trainer:{self.trainer.name}", keys)
+
+	def test_calendar_manager_event_updated_on_manager_change(self):
+		form = self._complete()
+		new_emp = self._other_manager()
+		with self._no_google(), patch("frappe.sendmail"):
+			self._schedule(form)
+			frappe.db.set_value("Employee", self.emp_learner, "reports_to", new_emp)
+			ef.sync_manager_to_feedback(self.emp_learner, new_emp)
+		by_key = {e.custom_feedback_key: e.name for e in self._events(form)}
+		self.assertIn("manager:0", by_key)
+		self.assertIn("eff_mgr2@example.com", self._event_emails(by_key["manager:0"]))
+
+	def test_calendar_manager_event_cancelled_when_manager_removed(self):
+		form = self._complete()
+		with self._no_google(), patch("frappe.sendmail"):
+			self._schedule(form)
+			frappe.db.set_value("Employee", self.emp_learner, "reports_to", None)
+			ef.sync_manager_to_feedback(self.emp_learner, None)
+		keys = {e.custom_feedback_key for e in self._events(form)}
+		self.assertNotIn("manager:0", keys)
+		self.assertIn("master:0", keys)

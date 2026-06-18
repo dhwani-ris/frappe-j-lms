@@ -100,6 +100,8 @@
 
   <div class="banner"><b>Roster stays in sync.</b> Editing an assignment's <b>trainers</b> (<code>/assign-course</code>) or changing an employee's <b>manager</b> (<code>/employees/:id</code>) now flows into the live feedback form — see §9. Adding a trainer reschedules; a recorded trainer is never dropped; the manager is only re-pointed while no manager feedback exists.</div>
 
+  <div class="banner"><b>Calendar sync.</b> Every scheduled session is mirrored as a Frappe <b>Event</b> that invites the reviewer + the employee (15-min block) and syncs to <b>Google Calendar</b> (organizer = the scheduling master trainer's connected calendar). Reschedules update the events, removals/reopen cancel them — see §10.</div>
+
   <!-- 1 OVERVIEW -->
   <section class="block">
     <h2>1 · Overview</h2>
@@ -320,6 +322,19 @@
       <li>On each non-Completed form, if <b>no</b> manager session is recorded → set <code>immediate_manager</code> to the new manager (keeping the scheduled manager session times); the new manager is notified. If manager feedback is already recorded → leave it unchanged.</li>
       <li><b>Removing</b> the manager clears <code>manager_sessions</code> (no one to attend).</li>
       <li><code>immediate_manager</code> uses <code>fetch_if_empty: 1</code> <span class="chg">CHANGED</span> so it's pinned at creation and isn't silently re-fetched on later saves — without this the "don't change once feedback is saved" rule couldn't hold.</li>
+    </ul>
+  </section>
+
+  <!-- 10 CALENDAR SYNC -->
+  <section class="block">
+    <h2>10 · Calendar Sync <span class="new">NEW</span></h2>
+    <p class="note">Each scheduled session is mirrored as a Frappe <code>Event</code> that invites the <b>reviewer + the employee</b> (15-minute block, no video link), reusing Frappe's built-in <b>Event → Google Calendar</b> push (<code>frappe/integrations/doctype/google_calendar</code>). Logic in <code>lms/lms/custom/feedback_calendar.py</code>.</p>
+    <ul class="clean">
+      <li><b>Mechanism:</b> Google emails an invite to every attendee (any provider) because <code>get_attendees()</code> reads each <code>event_participants.email</code>. A Frappe User's name <i>is</i> the email, so the reviewer + employee are added directly.</li>
+      <li><b>Organizer / account:</b> <code>_resolve_google_calendar()</code> prefers a <code>Google Calendar</code> the scheduling master trainer has connected (push enabled) so the <b>MT organizes</b>; else any push-enabled calendar (site default). If none is connected, the Event is still created (visible on the in-app desk Calendar) with sync <b>off</b> — never errors.</li>
+      <li><b>Reconcile (update + cancel):</b> <code>sync_feedback_calendar(form)</code> is idempotent, keyed by <code>custom_feedback_key</code> (<code>manager:&lt;i&gt;</code> / <code>trainer:&lt;user&gt;</code> / <code>master:&lt;i&gt;</code>) and back-linked via the hidden <code>custom_feedback_form</code> Custom Field on Event. It creates new session events, updates changed ones in place, and cancels (deletes) ones no longer present; when the form is unscheduled (reschedule / reopen) it cancels them all.</li>
+      <li><b>Triggers:</b> called after save from <code>schedule_sessions</code> (invites), <code>reschedule_sessions</code> / <code>reopen_feedback</code> (cancel), <code>sync_assignment_trainers_to_feedback</code> (cancel a removed trainer), and <code>sync_manager_to_feedback</code> (update / cancel the manager's event). Fully guarded — a calendar failure is logged and never blocks the feedback flow.</li>
+      <li><b>Setup:</b> the hidden Event fields are created by <code>install.setup_feedback_event_custom_fields</code> (wired into <code>after_sync</code> + <code>after_migrate</code>). To enable external sync, connect a Google Calendar (OAuth, push enabled) — ideally the master trainer's.</li>
     </ul>
   </section>
 
