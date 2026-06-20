@@ -31,9 +31,7 @@
 		<div v-else-if="form" class="mx-auto max-w-3xl p-5">
 			<!-- Summary -->
 			<div class="mb-6 rounded-lg border bg-surface-white p-5">
-				<div class="text-lg font-semibold text-ink-gray-9">
-					{{ form.employee_name }}
-				</div>
+				<div class="text-lg font-semibold text-ink-gray-9">{{ form.employee_name }}</div>
 				<div class="mt-1 text-ink-gray-6">{{ form.course_title }}</div>
 				<div class="mt-3 grid grid-cols-2 gap-3 text-sm text-ink-gray-6 sm:grid-cols-3">
 					<div>
@@ -52,39 +50,71 @@
 			</div>
 
 			<!-- Schedule panel (Master Trainer / admin, before scheduling is confirmed) -->
-			<div v-if="form.can_schedule" class="mb-6 rounded-lg border border-blue-200 bg-surface-blue-1 p-5">
+			<div
+				v-if="form.can_schedule"
+				class="mb-6 rounded-lg border border-blue-200 bg-surface-blue-1 p-5"
+			>
 				<div class="mb-1 font-semibold text-ink-gray-9">{{ __('Schedule feedback sessions') }}</div>
 				<p class="mb-4 text-sm text-ink-gray-6">
 					{{
 						__(
-							'Set each meeting time. Order must be manager → trainers (in order) → master, at least 15 minutes apart, all in the future.'
+							'Order must be manager sessions → trainers → master sessions, at least 15 minutes apart, all in the future. The manager and master can have multiple sessions.'
 						)
 					}}
 				</p>
 
-				<div v-if="form.immediate_manager" class="mb-3">
-					<label class="mb-1 block text-sm text-ink-gray-7">
-						{{ __('Manager') }} — {{ form.immediate_manager_name }}
-					</label>
-					<input type="datetime-local" v-model="sched.manager" class="form-input w-full" />
+				<!-- Manager sessions -->
+				<div v-if="form.immediate_manager" class="mb-4">
+					<div class="mb-1 flex items-center justify-between">
+						<label class="text-sm font-medium text-ink-gray-7">
+							{{ __('Manager sessions') }} — {{ form.immediate_manager_name }}
+						</label>
+						<Button variant="ghost" @click="addRow('manager')">
+							<template #prefix><Plus class="size-4" /></template>
+							{{ __('Add') }}
+						</Button>
+					</div>
+					<div v-for="(s, i) in sched.manager" :key="i" class="mb-2 flex items-center gap-2">
+						<input type="datetime-local" v-model="s.dt" class="form-input w-full" />
+						<Button
+							variant="ghost"
+							:disabled="sched.manager.length === 1"
+							@click="removeRow('manager', i)"
+						>
+							<Trash2 class="size-4 text-ink-gray-6" />
+						</Button>
+					</div>
 				</div>
 
+				<!-- Trainer sessions (fixed rows) -->
 				<div v-for="t in form.trainers" :key="t.name" class="mb-3">
-					<label class="mb-1 block text-sm text-ink-gray-7">
+					<label class="mb-1 block text-sm font-medium text-ink-gray-7">
 						{{ __('Trainer') }} — {{ t.trainer_name || t.trainer }}
 					</label>
-					<input
-						type="datetime-local"
-						v-model="sched.trainers[t.name]"
-						class="form-input w-full"
-					/>
+					<input type="datetime-local" v-model="sched.trainers[t.name]" class="form-input w-full" />
 				</div>
 
+				<!-- Master sessions -->
 				<div class="mb-4">
-					<label class="mb-1 block text-sm text-ink-gray-7">
-						{{ __('Master Trainer') }} ({{ __('you') }})
-					</label>
-					<input type="datetime-local" v-model="sched.master" class="form-input w-full" />
+					<div class="mb-1 flex items-center justify-between">
+						<label class="text-sm font-medium text-ink-gray-7">
+							{{ __('Master trainer sessions') }} ({{ __('you') }})
+						</label>
+						<Button variant="ghost" @click="addRow('master')">
+							<template #prefix><Plus class="size-4" /></template>
+							{{ __('Add') }}
+						</Button>
+					</div>
+					<div v-for="(s, i) in sched.master" :key="i" class="mb-2 flex items-center gap-2">
+						<input type="datetime-local" v-model="s.dt" class="form-input w-full" />
+						<Button
+							variant="ghost"
+							:disabled="sched.master.length === 1"
+							@click="removeRow('master', i)"
+						>
+							<Trash2 class="size-4 text-ink-gray-6" />
+						</Button>
+					</div>
 				</div>
 
 				<Button variant="solid" :loading="saving === 'schedule'" @click="confirmSchedule">
@@ -92,7 +122,6 @@
 				</Button>
 			</div>
 
-			<!-- Not yet scheduled, and the viewer can't schedule -->
 			<div
 				v-else-if="!form.sessions_scheduled"
 				class="mb-6 rounded-lg border bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
@@ -100,21 +129,25 @@
 				{{ __('Feedback will open once the master trainer schedules the sessions.') }}
 			</div>
 
-			<!-- Feedback sections (only once scheduled) -->
+			<!-- Feedback (after scheduling) -->
 			<template v-if="form.sessions_scheduled">
-				<!-- Manager Feedback -->
-				<FeedbackBlock
-					v-if="form.immediate_manager"
-					:title="__('Manager Feedback')"
-					:recorded="!!form.manager_feedback_done"
-					:recorded-by="form.manager_feedback_by"
-					:recorded-on="form.manager_feedback_on"
-					:editable="form.can_edit_manager"
-					:scheduled-datetime="form.manager_meeting_datetime"
-					:feedback="form.manager_feedback"
-					:saving="saving === 'manager'"
-					@save="(p) => saveManager(p)"
-				/>
+				<!-- Manager sessions -->
+				<template v-if="form.immediate_manager">
+					<div class="mb-2 text-sm font-semibold text-ink-gray-7">{{ __('Manager Feedback') }}</div>
+					<FeedbackBlock
+						v-for="(s, i) in form.manager_sessions"
+						:key="s.name"
+						:title="`${__('Session')} ${i + 1}`"
+						:recorded="!!s.recorded"
+						:recorded-by="s.recorded_by"
+						:recorded-on="s.recorded_on"
+						:editable="form.can_edit_manager"
+						:scheduled-datetime="s.meeting_datetime"
+						:feedback="s.feedback"
+						:saving="saving === `m:${s.name}`"
+						@save="(p) => saveManager(s.name, p)"
+					/>
+				</template>
 
 				<!-- Trainer Feedback -->
 				<div class="mb-6 rounded-lg border bg-surface-white p-5">
@@ -134,9 +167,7 @@
 					>
 						<div class="mb-2 flex items-center justify-between">
 							<div class="flex items-center gap-2">
-								<span class="font-medium text-ink-gray-8">
-									{{ row.trainer_name || row.trainer }}
-								</span>
+								<span class="font-medium text-ink-gray-8">{{ row.trainer_name || row.trainer }}</span>
 								<Badge v-if="row.is_me" theme="blue" variant="subtle" :label="__('You')" />
 							</div>
 							<Badge
@@ -149,8 +180,6 @@
 							<span class="text-ink-gray-4">{{ __('Scheduled') }}:</span>
 							{{ row.meeting_datetime || __('Not scheduled yet') }}
 						</div>
-
-						<!-- Editable: the current user's own row -->
 						<div v-if="row.is_me && form.can_edit_trainer" class="space-y-2">
 							<FormControl
 								type="textarea"
@@ -162,8 +191,6 @@
 								{{ __('Save Trainer Feedback') }}
 							</Button>
 						</div>
-
-						<!-- Read-only -->
 						<div v-else>
 							<div
 								v-if="row.feedback"
@@ -175,17 +202,22 @@
 					</div>
 				</div>
 
-				<!-- Master Trainer Feedback -->
+				<!-- Master sessions -->
+				<div class="mb-2 text-sm font-semibold text-ink-gray-7">
+					{{ __('Master Trainer Feedback') }}
+				</div>
 				<FeedbackBlock
-					:title="__('Master Trainer Feedback')"
-					:recorded="!!form.master_feedback_done"
-					:recorded-by="form.master_feedback_by"
-					:recorded-on="form.master_feedback_on"
+					v-for="(s, i) in form.master_sessions"
+					:key="s.name"
+					:title="`${__('Session')} ${i + 1}`"
+					:recorded="!!s.recorded"
+					:recorded-by="s.recorded_by"
+					:recorded-on="s.recorded_on"
 					:editable="form.can_edit_master"
-					:scheduled-datetime="form.master_meeting_datetime"
-					:feedback="form.master_feedback"
-					:saving="saving === 'master'"
-					@save="(p) => saveMaster(p)"
+					:scheduled-datetime="s.meeting_datetime"
+					:feedback="s.feedback"
+					:saving="saving === `x:${s.name}`"
+					@save="(p) => saveMaster(s.name, p)"
 				/>
 
 				<!-- Actions -->
@@ -212,7 +244,7 @@
 					v-if="form.can_edit_master && !form.can_complete && form.status !== 'Completed'"
 					class="mt-2 text-right text-xs text-ink-gray-4"
 				>
-					{{ __('Manager, all trainers and master feedback must be recorded to complete.') }}
+					{{ __('All manager, trainer and master sessions must be recorded to complete.') }}
 				</p>
 			</template>
 		</div>
@@ -225,6 +257,7 @@
 
 <script setup>
 import { Breadcrumbs, Button, Badge, FormControl, LoadingIndicator, createResource, call } from 'frappe-ui'
+import { Plus, Trash2 } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'frappe-ui'
@@ -235,7 +268,7 @@ const feedbackName = route.params.name
 
 const saving = ref(null)
 const trainerFeedback = ref('')
-const sched = reactive({ manager: '', master: '', trainers: {} })
+const sched = reactive({ manager: [], master: [], trainers: {} })
 
 const resource = createResource({
 	url: 'lms.lms.custom.employee_feedback.get_feedback_form',
@@ -256,23 +289,27 @@ const statusTheme = computed(() => {
 	return map[form.value?.status] || 'gray'
 })
 
-const recordedTrainers = computed(
-	() => form.value?.trainers.filter((t) => t.recorded).length || 0
-)
+const recordedTrainers = computed(() => form.value?.trainers.filter((t) => t.recorded).length || 0)
 
-// Seed editable + schedule fields once data arrives.
 watch(form, (f) => {
 	if (!f) return
 	const myRow = f.trainers.find((t) => t.is_me)
 	trainerFeedback.value = stripHtml(myRow?.feedback)
 
-	sched.manager = toLocalInput(f.manager_meeting_datetime)
-	sched.master = toLocalInput(f.master_meeting_datetime)
+	sched.manager = f.manager_sessions.map((s) => ({ row: s.name, dt: toLocalInput(s.meeting_datetime) }))
+	if (f.immediate_manager && !sched.manager.length) sched.manager = [{ row: null, dt: '' }]
+	sched.master = f.master_sessions.map((s) => ({ row: s.name, dt: toLocalInput(s.meeting_datetime) }))
+	if (!sched.master.length) sched.master = [{ row: null, dt: '' }]
 	sched.trainers = {}
-	for (const t of f.trainers) {
-		sched.trainers[t.name] = toLocalInput(t.meeting_datetime)
-	}
+	for (const t of f.trainers) sched.trainers[t.name] = toLocalInput(t.meeting_datetime)
 })
+
+function addRow(which) {
+	sched[which].push({ row: null, dt: '' })
+}
+function removeRow(which, i) {
+	sched[which].splice(i, 1)
+}
 
 function toLocalInput(dt) {
 	if (!dt) return ''
@@ -303,29 +340,38 @@ async function runAction(method, args, key) {
 }
 
 function confirmSchedule() {
+	const manager_times = sched.manager
+		.filter((s) => s.dt)
+		.map((s) => ({ row: s.row, meeting_datetime: toServer(s.dt) }))
+	const master_times = sched.master
+		.filter((s) => s.dt)
+		.map((s) => ({ row: s.row, meeting_datetime: toServer(s.dt) }))
 	const trainer_times = form.value.trainers.map((t) => ({
 		row: t.name,
 		meeting_datetime: toServer(sched.trainers[t.name]),
 	}))
 	return runAction(
 		'schedule_sessions',
-		{
-			name: feedbackName,
-			manager_meeting_datetime: toServer(sched.manager),
-			master_meeting_datetime: toServer(sched.master),
-			trainer_times,
-		},
+		{ name: feedbackName, manager_times, master_times, trainer_times },
 		'schedule'
 	)
 }
 function reschedule() {
 	return runAction('reschedule_sessions', { name: feedbackName }, 'reschedule')
 }
-function saveManager(payload) {
-	return runAction('save_manager_feedback', { name: feedbackName, feedback: payload.feedback }, 'manager')
+function saveManager(row, payload) {
+	return runAction(
+		'save_manager_feedback',
+		{ name: feedbackName, feedback: payload.feedback, row },
+		`m:${row}`
+	)
 }
-function saveMaster(payload) {
-	return runAction('save_master_feedback', { name: feedbackName, feedback: payload.feedback }, 'master')
+function saveMaster(row, payload) {
+	return runAction(
+		'save_master_feedback',
+		{ name: feedbackName, feedback: payload.feedback, row },
+		`x:${row}`
+	)
 }
 function saveTrainer() {
 	return runAction('save_trainer_feedback', { name: feedbackName, feedback: trainerFeedback.value }, 'trainer')

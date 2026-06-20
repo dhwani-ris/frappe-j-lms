@@ -882,6 +882,13 @@ def update_employee_manager(employee, reports_to):
 
     emp.reports_to = reports_to or None
     emp.save(ignore_permissions=True)
+
+    # Keep in-flight feedback forms in step: update immediate_manager where the manager
+    # feedback has not been recorded yet (no-op for forms whose manager already gave feedback).
+    from lms.lms.custom.employee_feedback import sync_manager_to_feedback
+
+    sync_manager_to_feedback(employee, reports_to or None)
+
     frappe.db.commit()
 
     manager_name = None

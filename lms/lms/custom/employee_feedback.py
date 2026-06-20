@@ -17,9 +17,10 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, today
+from frappe.utils import cint, format_datetime, get_datetime, today
 from frappe.utils.user import get_users_with_role
 
+from lms.lms.custom.feedback_calendar import sync_feedback_calendar
 from lms.lms.custom.notifications import (
 	HR_ROLE,
 	_get_master_trainers,
@@ -101,21 +102,8 @@ def can_act_master(form, user=None):
 	return _is_admin(user) or (bool(form.master_trainer) and form.master_trainer == user)
 
 
-def manager_required(form):
-	return bool(form.immediate_manager)
-
-
-def manager_ok(form):
-	return (not manager_required(form)) or cint(form.manager_feedback_done)
-
-
 def ready_to_complete(form):
-	return bool(
-		manager_ok(form)
-		and cint(form.master_feedback_done)
-		and form.trainer_feedback
-		and all(cint(r.recorded) for r in form.trainer_feedback)
-	)
+	return bool(form.manager_done() and form.master_done() and form.all_trainers_recorded())
 
 
 def can_edit_manager(form, user=None):
@@ -131,35 +119,42 @@ def _require_scheduled(form):
 		)
 
 
+def _active_forms_excluding(extra_filters, exclude_form):
+	"""Names of not-Completed forms matching ``extra_filters``, excluding this one."""
+	filters = {"name": ["!=", exclude_form], "status": ["!=", "Completed"]}
+	filters.update(extra_filters)
+	return frappe.get_all(DOCTYPE, filters=filters, pluck="name")
+
+
+def _session_times(form_names, parentfield):
+	"""All ``meeting_datetime`` values of the given session rows on the given forms."""
+	if not form_names:
+		return []
+	return frappe.get_all(
+		"Employee Feedback Session",
+		filters={
+			"parenttype": DOCTYPE,
+			"parentfield": parentfield,
+			"parent": ["in", form_names],
+			"meeting_datetime": ["is", "set"],
+		},
+		pluck="meeting_datetime",
+	)
+
+
 def _busy_blocks(user, exclude_form):
 	"""All scheduled meeting times for ``user`` across *other, not-Completed* forms —
-	the manager slot of forms they manage, their trainer-row slots, and the master slot
-	of forms where they are the master trainer."""
+	their manager sessions (forms they manage), their trainer-row slots, and their
+	master sessions (forms where they are the master trainer)."""
 	blocks = []
 
 	emps = frappe.get_all("Employee", {"user_id": user}, pluck="name")
 	if emps:
-		blocks += frappe.get_all(
-			DOCTYPE,
-			filters={
-				"immediate_manager": ["in", emps],
-				"name": ["!=", exclude_form],
-				"status": ["!=", "Completed"],
-				"manager_meeting_datetime": ["is", "set"],
-			},
-			pluck="manager_meeting_datetime",
-		)
+		mgr_forms = _active_forms_excluding({"immediate_manager": ["in", emps]}, exclude_form)
+		blocks += _session_times(mgr_forms, "manager_sessions")
 
-	blocks += frappe.get_all(
-		DOCTYPE,
-		filters={
-			"master_trainer": user,
-			"name": ["!=", exclude_form],
-			"status": ["!=", "Completed"],
-			"master_meeting_datetime": ["is", "set"],
-		},
-		pluck="master_meeting_datetime",
-	)
+	master_forms = _active_forms_excluding({"master_trainer": user}, exclude_form)
+	blocks += _session_times(master_forms, "master_sessions")
 
 	trainer_rows = frappe.get_all(
 		"Employee Feedback Trainer",
@@ -190,12 +185,14 @@ def _check_conflicts(form, scheduler_user):
 	if form.immediate_manager:
 		mu = _manager_user(form)
 		if mu:
-			participants.append((_("The manager"), mu, form.manager_meeting_datetime))
+			for row in form.manager_sessions:
+				participants.append((_("The manager"), mu, row.meeting_datetime))
 	for row in form.trainer_feedback:
 		if row.trainer:
 			label = row.trainer_name or row.trainer
 			participants.append((label, row.trainer, row.meeting_datetime))
-	participants.append((_("The master trainer"), scheduler_user, form.master_meeting_datetime))
+	for row in form.master_sessions:
+		participants.append((_("The master trainer"), scheduler_user, row.meeting_datetime))
 
 	for label, user, dt in participants:
 		if not dt:
@@ -253,14 +250,138 @@ def create_feedback_form_on_completion(doc, method=None):
 
 
 # ---------------------------------------------------------------------------
+# Roster sync — keep the feedback form in step with assignment / manager edits
+# ---------------------------------------------------------------------------
+
+
+def sync_assignment_trainers_to_feedback(batch, new_trainers) -> dict:
+	"""Reflect an assignment's trainer change in the (non-Completed) feedback form for
+	that batch: add new trainer rows; drop removed trainers that have NOT recorded; keep
+	removed trainers who already recorded. Adding a trainer to an already-scheduled form
+	sends it back to Draft for rescheduling. Returns ``{"unscheduled": bool}``.
+
+	Called only from the role-guarded ``course_assignment.update_assignment_trainers``."""
+	if isinstance(new_trainers, str):
+		new_trainers = json.loads(new_trainers or "[]")
+	new_set = list(dict.fromkeys(new_trainers or []))  # de-dup, keep order
+
+	form_name = frappe.db.get_value(DOCTYPE, {"batch": batch, "status": ["!=", "Completed"]})
+	if not form_name:
+		return {"unscheduled": False}
+	form = frappe.get_doc(DOCTYPE, form_name)
+
+	current = {r.trainer for r in form.trainer_feedback}
+	added = [t for t in new_set if t not in current]
+
+	kept, removed = [], []
+	for r in form.trainer_feedback:
+		if r.trainer in new_set or cint(r.recorded):
+			kept.append(r)  # still assigned, or already recorded → keep
+		else:
+			removed.append(r.trainer)
+
+	if not added and not removed:
+		return {"unscheduled": False}
+
+	form.set(
+		"trainer_feedback",
+		[
+			{
+				"trainer": r.trainer,
+				"meeting_datetime": r.meeting_datetime,
+				"feedback": r.feedback,
+				"recorded": r.recorded,
+			}
+			for r in kept
+		]
+		+ [{"trainer": t} for t in added],
+	)
+
+	unscheduled = bool(added) and bool(cint(form.sessions_scheduled))
+	if unscheduled:
+		form.flags.rescheduling = True  # → Draft, sessions_scheduled = 0
+	else:
+		form.flags.syncing_roster = True  # keep schedule; bypass the locked-times guard
+	# ignore_permissions: caller (update_assignment_trainers) is role-guarded via
+	# frappe.only_for(); this is a system-driven roster sync, not a user edit.
+	form.save(ignore_permissions=True)
+
+	for trainer in added:
+		notify_trainer_added(form, trainer)
+	if added:
+		_notify_roster_change(form)
+	sync_feedback_calendar(form)  # cancel removed trainers' events / cancel all if unscheduled
+	return {"unscheduled": unscheduled}
+
+
+def sync_manager_to_feedback(employee, new_reports_to) -> None:
+	"""Reflect a manager change on the employee's non-Completed feedback forms: update
+	``immediate_manager`` only while no manager feedback has been recorded; keep the
+	scheduled manager session times for the new manager. Removing the manager clears the
+	manager sessions.
+
+	Called only from the HR-guarded ``dashboard_api.update_employee_manager``."""
+	new_manager = new_reports_to or None
+	forms = frappe.get_all(
+		DOCTYPE, {"employee": employee, "status": ["!=", "Completed"]}, pluck="name"
+	)
+	for fname in forms:
+		form = frappe.get_doc(DOCTYPE, fname)
+		if any(cint(s.recorded) for s in form.manager_sessions):
+			continue  # manager feedback already saved — leave it untouched
+		if (form.immediate_manager or None) == new_manager:
+			continue
+		form.immediate_manager = new_manager
+		if not new_manager:
+			form.set("manager_sessions", [])  # no manager to attend the sessions
+		form.flags.syncing_roster = True
+		# ignore_permissions: caller (update_employee_manager) is HR-guarded via
+		# frappe.only_for(); this is a system-driven roster sync, not a user edit.
+		form.save(ignore_permissions=True)
+		sync_feedback_calendar(form)  # update manager events' attendee / cancel if removed
+		if new_manager:
+			notify_manager_assigned(form)
+
+
+# ---------------------------------------------------------------------------
 # Whitelisted reviewer actions (portal + desk)
 # ---------------------------------------------------------------------------
 
 
+def _reconcile_sessions(form, table_field, times):
+	"""Rebuild a session table from the scheduler's payload, preserving feedback already
+	recorded on rows that are kept (matched by row name)."""
+	existing = {r.name: r for r in form.get(table_field)}
+	rows = []
+	for t in times:
+		dt = _clean(t.get("meeting_datetime"))
+		rid = t.get("row")
+		if rid and rid in existing:
+			r = existing[rid]
+			rows.append(
+				{
+					"meeting_datetime": dt,
+					"feedback": r.feedback,
+					"recorded": r.recorded,
+					"recorded_by": r.recorded_by,
+					"recorded_on": r.recorded_on,
+				}
+			)
+		else:
+			rows.append({"meeting_datetime": dt})
+	form.set(table_field, rows)
+
+
 @frappe.whitelist()
-def schedule_sessions(name, manager_meeting_datetime=None, master_meeting_datetime=None, trainer_times=None):
-	"""Master-Trainer-only: set every meeting time, validate order/gap/future + conflicts,
-	self-assign as the form's master trainer, and move the form to 'Sessions Scheduled'."""
+def schedule_sessions(name, manager_times=None, master_times=None, trainer_times=None):
+	"""Master-Trainer-only: set every meeting time (manager & master can each have
+	multiple sessions), validate order/gap/future + conflicts, self-assign as the form's
+	master trainer, and move the form to 'Sessions Scheduled'.
+
+	``manager_times`` / ``master_times`` / ``trainer_times`` are lists of
+	``{"row": <existing row name, optional>, "meeting_datetime": ...}``; trainer entries
+	may use ``{"trainer": <user>, ...}`` instead of ``row``.
+	"""
 	form = frappe.get_doc(DOCTYPE, name)
 	user = frappe.session.user
 	if not can_schedule(user):
@@ -271,18 +392,24 @@ def schedule_sessions(name, manager_meeting_datetime=None, master_meeting_dateti
 	if form.status == "Completed":
 		frappe.throw(_("Reopen the completed form before scheduling."))
 
-	if isinstance(trainer_times, str):
-		trainer_times = json.loads(trainer_times or "[]")
-	trainer_times = trainer_times or []
+	def _parse(value):
+		if isinstance(value, str):
+			return json.loads(value or "[]")
+		return value or []
+
+	manager_times = _parse(manager_times) if form.immediate_manager else []
+	master_times = _parse(master_times)
+	trainer_times = _parse(trainer_times)
+
+	_reconcile_sessions(form, "manager_sessions", manager_times)
+	_reconcile_sessions(form, "master_sessions", master_times)
+
 	by_row = {t["row"]: _clean(t.get("meeting_datetime")) for t in trainer_times if t.get("row")}
 	by_trainer = {
 		t["trainer"]: _clean(t.get("meeting_datetime"))
 		for t in trainer_times
 		if t.get("trainer")
 	}
-
-	form.manager_meeting_datetime = _clean(manager_meeting_datetime) if form.immediate_manager else None
-	form.master_meeting_datetime = _clean(master_meeting_datetime)
 	for row in form.trainer_feedback:
 		if row.name in by_row:
 			row.meeting_datetime = by_row[row.name]
@@ -295,6 +422,7 @@ def schedule_sessions(name, manager_meeting_datetime=None, master_meeting_dateti
 	form.flags.scheduling = True
 	form.save(ignore_permissions=True)  # validate_schedule() enforces order/gap/future
 	notify_feedback_scheduled(form)
+	sync_feedback_calendar(form)
 	return _form_payload(form)
 
 
@@ -312,11 +440,22 @@ def reschedule_sessions(name):
 		frappe.throw(_("Reopen the completed form before rescheduling."))
 	form.flags.rescheduling = True
 	form.save(ignore_permissions=True)
+	sync_feedback_calendar(form)  # unscheduled → cancel the session events
 	return _form_payload(form)
 
 
+def _session_row(form, table_field, row_name):
+	if not row_name:
+		frappe.throw(_("A feedback session must be selected."))
+	row = next((r for r in form.get(table_field) if r.name == row_name), None)
+	if not row:
+		# Generic message — never echo the client-supplied row name back.
+		frappe.throw(_("Invalid or missing feedback session."))
+	return row
+
+
 @frappe.whitelist()
-def save_manager_feedback(name, feedback=None):
+def save_manager_feedback(name, feedback=None, row=None):
 	form = frappe.get_doc(DOCTYPE, name)
 	if not can_edit_manager(form):
 		frappe.throw(
@@ -324,7 +463,7 @@ def save_manager_feedback(name, feedback=None):
 			frappe.PermissionError,
 		)
 	_require_scheduled(form)
-	form.manager_feedback = _clean(feedback)
+	_session_row(form, "manager_sessions", row).feedback = _clean(feedback)
 	form.save(ignore_permissions=True)
 	notify_manager_feedback(form)
 	return _form_payload(form)
@@ -353,7 +492,7 @@ def save_trainer_feedback(name, feedback=None, trainer=None):
 
 
 @frappe.whitelist()
-def save_master_feedback(name, feedback=None):
+def save_master_feedback(name, feedback=None, row=None):
 	form = frappe.get_doc(DOCTYPE, name)
 	if not can_act_master(form):
 		frappe.throw(
@@ -361,8 +500,8 @@ def save_master_feedback(name, feedback=None):
 			frappe.PermissionError,
 		)
 	_require_scheduled(form)
-	form.master_feedback = _clean(feedback)
-	form.save(ignore_permissions=True)  # validate() stamps master_feedback_by = session user
+	_session_row(form, "master_sessions", row).feedback = _clean(feedback)
+	form.save(ignore_permissions=True)  # validate() stamps recorded_by = session user
 	notify_master_feedback(form)
 	return _form_payload(form)
 
@@ -391,6 +530,7 @@ def reopen_feedback(name):
 		)
 	form.flags.reopening = True
 	form.save(ignore_permissions=True)
+	sync_feedback_calendar(form)  # back to Draft → cancel the session events
 	return _form_payload(form)
 
 
@@ -425,8 +565,6 @@ def list_my_feedback_forms():
 			"immediate_manager",
 			"master_trainer",
 			"sessions_scheduled",
-			"manager_feedback_done",
-			"master_feedback_done",
 			"modified",
 		],
 		order_by="modified desc",
@@ -441,12 +579,36 @@ def list_my_feedback_forms():
 	)
 	scheduler = can_schedule(user)
 
+	# Batch the manager lookups (user_id + name) to avoid an N+1 over Employee.
+	manager_ids = list({f.immediate_manager for f in forms if f.immediate_manager})
+	manager_map = {
+		e.name: e
+		for e in (
+			frappe.get_all(
+				"Employee",
+				{"name": ["in", manager_ids]},
+				["name", "user_id", "employee_name"],
+			)
+			if manager_ids
+			else []
+		)
+	}
+
+	def _has_unrecorded(form_name, parentfield):
+		return bool(
+			frappe.db.exists(
+				"Employee Feedback Session",
+				{"parent": form_name, "parentfield": parentfield, "recorded": 0},
+			)
+		)
+
 	for f in forms:
-		manager_user = _employee_user(f.immediate_manager)
-		f["is_manager"] = manager_user == user
+		manager = manager_map.get(f.immediate_manager)
+		f["is_manager"] = bool(manager) and manager.user_id == user
 		f["is_trainer"] = f["name"] in my_trainer_parents
 		f["is_master"] = bool(f.master_trainer) and f.master_trainer == user
 		f["can_schedule"] = scheduler
+		f["immediate_manager_name"] = manager.employee_name if manager else None
 
 		pending = False
 		if f["status"] != "Completed":
@@ -455,7 +617,7 @@ def list_my_feedback_forms():
 				if scheduler:
 					pending = True
 			else:
-				if f["is_manager"] and not cint(f["manager_feedback_done"]):
+				if f["is_manager"] and _has_unrecorded(f["name"], "manager_sessions"):
 					pending = True
 				if f["is_trainer"]:
 					recorded = frappe.db.get_value(
@@ -465,7 +627,7 @@ def list_my_feedback_forms():
 					)
 					if not cint(recorded):
 						pending = True
-				if f["is_master"] and not cint(f["master_feedback_done"]):
+				if f["is_master"] and _has_unrecorded(f["name"], "master_sessions"):
 					pending = True
 		f["action_needed"] = pending
 
@@ -475,6 +637,17 @@ def list_my_feedback_forms():
 # ---------------------------------------------------------------------------
 # Payload builder
 # ---------------------------------------------------------------------------
+
+
+def _session_payload(r):
+	return {
+		"name": r.name,
+		"meeting_datetime": r.meeting_datetime,
+		"feedback": r.feedback,
+		"recorded": cint(r.recorded),
+		"recorded_by": r.recorded_by,
+		"recorded_on": r.recorded_on,
+	}
 
 
 def _form_payload(form):
@@ -498,16 +671,8 @@ def _form_payload(form):
 		"immediate_manager_name": frappe.db.get_value("Employee", form.immediate_manager, "employee_name")
 		if form.immediate_manager
 		else None,
-		"manager_meeting_datetime": form.manager_meeting_datetime,
-		"manager_feedback": form.manager_feedback,
-		"manager_feedback_done": cint(form.manager_feedback_done),
-		"manager_feedback_by": form.manager_feedback_by,
-		"manager_feedback_on": form.manager_feedback_on,
-		"master_meeting_datetime": form.master_meeting_datetime,
-		"master_feedback": form.master_feedback,
-		"master_feedback_done": cint(form.master_feedback_done),
-		"master_feedback_by": form.master_feedback_by,
-		"master_feedback_on": form.master_feedback_on,
+		"manager_sessions": [_session_payload(r) for r in form.manager_sessions],
+		"master_sessions": [_session_payload(r) for r in form.master_sessions],
 		"trainers": [
 			{
 				"name": r.name,
@@ -663,6 +828,64 @@ def notify_completed(form):
 			"The feedback form for <strong>{0}</strong> on <strong>{1}</strong> "
 			"is now complete."
 		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def notify_trainer_added(form, trainer):
+	"""A trainer was added to the assignment after the form already existed."""
+	employee_name, course_title, from_user = _context(form)
+	_fan_out(
+		[trainer],
+		from_user,
+		_("You've been added as a trainer for {0}").format(employee_name),
+		_(
+			"You have been added as a trainer for <strong>{0}</strong> ({1}). The master "
+			"trainer will schedule your feedback session."
+		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def _notify_roster_change(form):
+	"""Nudge the master trainer / HR that the trainer roster changed and the sessions
+	need (re)scheduling."""
+	employee_name, course_title, from_user = _context(form)
+	masters = [form.master_trainer] if form.master_trainer else _get_master_trainers()
+	recipients = list(masters) + list(get_users_with_role(HR_ROLE))
+	_fan_out(
+		recipients,
+		from_user,
+		_("Trainer roster changed for {0}").format(employee_name),
+		_(
+			"The trainer roster for <strong>{0}</strong> ({1}) has changed. Please "
+			"(re)schedule the feedback sessions."
+		).format(employee_name, course_title),
+		form.name,
+	)
+
+
+def notify_manager_assigned(form):
+	"""A new immediate manager was assigned to an in-flight feedback form."""
+	manager_user = _manager_user(form)
+	if not manager_user:
+		return
+	employee_name, course_title, from_user = _context(form)
+	times = [s.meeting_datetime for s in form.manager_sessions if s.meeting_datetime]
+	when = (
+		" " + _("Scheduled: {0}.").format(", ".join(format_datetime(t) for t in times))
+		if times
+		else ""
+	)
+	_fan_out(
+		[manager_user],
+		from_user,
+		_("You are now the manager for {0}'s feedback").format(employee_name),
+		_(
+			"You are now the immediate manager for <strong>{0}</strong>'s feedback on "
+			"<strong>{1}</strong>."
+		).format(employee_name, course_title)
+		+ when,
 		form.name,
 	)
 

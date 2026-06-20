@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Employee Feedback Form — Implementation Document</title>
+<style>
+  :root{
+    --bg:#ffffff; --card:#ffffff; --ink:#1f272e; --muted:#6c7680;
+    --line:#e2e6e9; --line2:#cfd5da; --accent:#2b7cd3; --accent-ink:#13578f;
+    --tint:#eef5fc; --green:#1f9d57; --green-tint:#e8f6ee; --amber:#b9770b;
+    --amber-tint:#fbf1de; --grey-tint:#eef0f2; --radius:8px;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:840px;margin:0 auto;padding:48px 28px 90px}
+
+  .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin:0 0 6px}
+  h1{font-size:30px;font-weight:600;margin:0 0 8px;letter-spacing:-.015em}
+  .lede{color:var(--muted);margin:0 0 22px;font-size:15.5px;max-width:64ch}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .chip{font-size:12.5px;background:#fafbfc;border:1px solid var(--line);
+    border-radius:20px;padding:4px 12px;color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+
+  section.block{margin-top:40px}
+  h2{font-size:13px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--accent-ink);margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid var(--tint)}
+  h3{font-size:16px;font-weight:600;margin:24px 0 10px}
+  h3 .child{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-tint);
+    border-radius:20px;padding:2px 10px;margin-left:8px;vertical-align:middle}
+  p{margin:0 0 12px}
+  .note{font-size:13.5px;color:var(--muted)}
+  code{font-family:var(--mono);font-size:13px;background:var(--grey-tint);
+    padding:1px 6px;border-radius:4px;color:var(--accent-ink)}
+
+  .tbl{width:100%;border-collapse:collapse;font-size:13.5px;
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .tbl th{background:#fafbfc;text-align:left;font-weight:600;font-size:12px;
+    text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line)}
+  .tbl td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl code{font-size:12px;background:none;padding:0;color:var(--accent-ink)}
+  .new{color:var(--green);font-weight:600;font-size:11px;background:var(--green-tint);
+    padding:1px 7px;border-radius:20px;margin-left:6px;white-space:nowrap}
+  .chg{color:var(--amber);font-weight:600;font-size:11px;background:var(--amber-tint);
+    padding:1px 7px;border-radius:20px;margin-left:6px;white-space:nowrap}
+  .yes{color:var(--green);font-weight:600}
+  .no{color:#b3bbc2}
+  .sec-row td{background:#f6f8fa;font-weight:600;color:var(--muted);
+    font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}
+  .sec-row.tbl-row td{background:#fbf6ee;color:var(--amber)}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
+  .pill.grey{background:var(--grey-tint);color:#566069}
+  .pill.amber{background:var(--amber-tint);color:var(--amber)}
+  .pill.green{background:var(--green-tint);color:var(--green)}
+
+  ol.steps{margin:0;padding-left:20px}
+  ol.steps li{margin-bottom:8px}
+  ul.clean{margin:6px 0 12px;padding-left:20px}
+  ul.clean li{margin-bottom:6px}
+
+  .assume{background:var(--green-tint);border:1px solid #c7e8d3;border-radius:6px;padding:14px 18px;font-size:13.5px}
+  .assume p{margin:0 0 9px}.assume p:last-child{margin:0}
+  .assume b{color:var(--green)}
+  .callout{background:var(--tint);border:1px solid #cfe2f5;border-radius:6px;
+    padding:11px 15px;font-size:13.5px;color:var(--accent-ink);margin:12px 0 0}
+  .callout.green{background:var(--green-tint);border-color:#c7e8d3;color:#0f6e3c}
+  .banner{background:var(--green-tint);border:1px solid #c7e8d3;border-radius:8px;
+    padding:12px 16px;font-size:13.5px;color:#0f6e3c;margin:18px 0 0}
+  .banner b{color:#0c5e34}
+
+  @media print{.wrap{max-width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Jamboree LMS · Frappe v16 · Implementation Document</p>
+  <h1>Employee Feedback Form</h1>
+  <p class="lede">A single form, auto-created when an employee completes 100% of an <b>assigned</b> course. The immediate manager and a master trainer each give feedback once; every assigned trainer gives feedback through a child table (the trainers are pre-filled from the course assignment). Reviewers work in the <b>Jamboree portal</b>; a controller-driven status walks the form from Draft to Completed and locks it, firing notifications at each stage.</p>
+  <div class="meta-row">
+    <span class="chip"><b>DocType</b> &nbsp;Employee Feedback Form</span>
+    <span class="chip"><b>Child Table</b> &nbsp;Employee Feedback Trainer</span>
+    <span class="chip"><b>Module</b> &nbsp;LMS</span>
+    <span class="chip"><b>Type</b> &nbsp;Transactional · status-driven (not submittable)</span>
+    <span class="chip"><b>Trigger</b> &nbsp;100% completion of an assigned course</span>
+    <span class="chip"><b>UI</b> &nbsp;frappe-ui portal</span>
+  </div>
+
+  <div class="banner"><b>As-built.</b> This document reflects the implementation that ships in the <code>lms</code> app — reconciled with how Jamboree already assigns courses and identifies master trainers. Backend: <code>lms/lms/doctype/employee_feedback_form</code>, <code>employee_feedback_trainer</code>, <code>lms/lms/custom/employee_feedback.py</code>. Portal: <code>frontend/src/pages/EmployeeFeedbackForm.vue</code> &amp; <code>EmployeeFeedback.vue</code> + <code>components/FeedbackBlock.vue</code>, <code>EmployeeFeedbackList.vue</code>, with a <b>Management → Employee Feedback</b> menu item (<code>src/utils/index.js</code>). Changes from the original draft are tagged <span class="chg">CHANGED</span>.</div>
+
+  <div class="banner"><b>Scheduling phase added.</b> The Master Trainer now <b>schedules every meeting time up front</b> (a new <b>Sessions Scheduled</b> state after Draft); those times are validated (strict order, ≥15-min gaps, future-only, no cross-form clashes) and <b>locked</b>, and only then can reviewers fill their feedback. Everyone is emailed their slot. New/changed items in §2, §3, §4, §6, §8 are tagged <span class="new">NEW</span> / <span class="chg">CHANGED</span>.</div>
+
+  <div class="banner"><b>Multiple manager / master sessions.</b> The manager and the master trainer can each have <b>several</b> feedback sessions (each its own meeting + feedback), held in the <code>manager_sessions</code> / <code>master_sessions</code> child tables (new <code>Employee Feedback Session</code> child). The MT adds/removes them while scheduling; a role is "done" only when <b>all</b> its sessions are recorded. Existing forms are migrated by <code>patches/v2_0/migrate_feedback_to_sessions.py</code>.</div>
+
+  <div class="banner"><b>Roster stays in sync.</b> Editing an assignment's <b>trainers</b> (<code>/assign-course</code>) or changing an employee's <b>manager</b> (<code>/employees/:id</code>) now flows into the live feedback form — see §9. Adding a trainer reschedules; a recorded trainer is never dropped; the manager is only re-pointed while no manager feedback exists.</div>
+
+  <div class="banner"><b>Calendar sync.</b> Every scheduled session is mirrored as a Frappe <b>Event</b> that invites the reviewer + the employee (15-min block) and syncs to <b>Google Calendar</b> (organizer = the scheduling master trainer's connected calendar). Reschedules update the events, removals/reopen cancel them — see §10.</div>
+
+  <!-- 1 OVERVIEW -->
+  <section class="block">
+    <h2>1 · Overview</h2>
+    <p>When an employee (for example, Kashish Talwani) reaches <b>100% completion of an assigned course</b>, one <code>Employee Feedback Form</code> is created for that employee and course. The employee, course, immediate manager and the assignment batch sit at the top of the form (employee name, course title and immediate manager auto-fetch). A <b>Master Trainer first schedules all the meeting times</b> — the manager's, each trainer's and their own — and only then can the reviewers fill their feedback. Because more than one trainer can run mock sessions, <b>trainers are rows in a child table</b>, and because the trainers were already chosen when the course was assigned, <b>those rows are pre-filled automatically</b> from the assignment. A controller walks the form from Draft → Sessions Scheduled → Completed, firing notifications at each stage.</p>
+    <p class="note">Course assignment already works this way in Jamboree: <code>lms/lms/custom/course_assignment.py::assign_course_to_student()</code> creates a one-student “micro-batch”, attaches the course, and stores the chosen trainers as <code>Course Instructor</code> rows on that <code>LMS Batch</code>. The feedback form reuses exactly that data.</p>
+  </section>
+
+  <!-- 2 SCHEMA -->
+  <section class="block">
+    <h2>2 · Field Schema</h2>
+    <h3>Parent DocType — Employee Feedback Form</h3>
+    <table class="tbl">
+      <thead>
+        <tr><th style="width:24%">Label</th><th style="width:24%">Fieldname</th><th>Fieldtype</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr class="sec-row"><td colspan="4">Section: Employee Information</td></tr>
+        <tr><td>Employee</td><td><code>employee</code></td><td>Link → Employee</td><td>Mandatory, read-only. Set by the auto-creation hook.</td></tr>
+        <tr><td>Employee Name</td><td><code>employee_name</code></td><td>Data</td><td><code>fetch_from: employee.employee_name</code>, read-only</td></tr>
+        <tr><td>Course</td><td><code>course</code></td><td>Link → LMS Course</td><td>Mandatory, read-only. The completed course.</td></tr>
+        <tr><td>Course Title <span class="new">NEW</span></td><td><code>course_title</code></td><td>Data</td><td><code>fetch_from: course.title</code>, read-only</td></tr>
+        <tr><td>Batch <span class="new">NEW</span></td><td><code>batch</code></td><td>Link → LMS Batch</td><td>The assignment micro-batch, read-only. Source of the trainer rows.</td></tr>
+        <tr><td>Completed On</td><td><code>completed_on</code></td><td>Date</td><td>Date the employee hit 100%, read-only</td></tr>
+        <tr><td>Immediate Manager</td><td><code>immediate_manager</code></td><td>Link → Employee</td><td><code>fetch_from: employee.reports_to</code>, read-only</td></tr>
+        <tr><td>Status</td><td><code>status</code></td><td>Select</td><td>Controller-driven, read-only, in list view. <code>Draft → Sessions Scheduled <span class="new">NEW</span> → Manager Feedback Added → Trainer Feedback Added → Completed</code>. See §3.</td></tr>
+        <tr><td>Sessions Scheduled <span class="new">NEW</span></td><td><code>sessions_scheduled</code></td><td>Check</td><td>Set when the Master Trainer confirms the schedule; read-only. Gates feedback entry and locks the meeting times.</td></tr>
+        <tr><td>Master Trainer <span class="chg">CHANGED</span></td><td><code>master_trainer</code></td><td>Link → User</td><td>The MT who scheduled the sessions (self-assigned). Read-only. Only this user (or an admin) records master feedback / completes. Re-assigned to whoever reschedules.</td></tr>
+
+        <tr class="sec-row tbl-row"><td colspan="4">Section: Manager Feedback &nbsp;·&nbsp; child table (multiple sessions) <span class="chg">CHANGED</span></td></tr>
+        <tr><td>Manager Sessions</td><td><code>manager_sessions</code></td><td>Table → Employee Feedback Session</td><td><b>Zero or more</b> sessions, all for the single immediate manager. The MT adds them when scheduling. See child schema below.</td></tr>
+
+        <tr class="sec-row tbl-row"><td colspan="4">Section: Trainer Feedback &nbsp;·&nbsp; child table (auto-filled, multiple trainers)</td></tr>
+        <tr><td>Trainer Feedback</td><td><code>trainer_feedback</code></td><td>Table → Employee Feedback Trainer</td><td>One row per assigned trainer. Pre-filled on creation. See child schema below.</td></tr>
+
+        <tr class="sec-row tbl-row"><td colspan="4">Section: Master Trainer Feedback &nbsp;·&nbsp; child table (multiple sessions) <span class="chg">CHANGED</span></td></tr>
+        <tr><td>Master Sessions</td><td><code>master_sessions</code></td><td>Table → Employee Feedback Session</td><td><b>One or more</b> sessions, all for the assigned master trainer.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Child DocType — Employee Feedback Trainer <span class="child">Is Child Table ✓</span></h3>
+    <table class="tbl">
+      <thead>
+        <tr><th style="width:24%">Label</th><th style="width:24%">Fieldname</th><th>Fieldtype</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Trainer</td><td><code>trainer</code></td><td>Link → User <span class="chg">CHANGED</span></td><td>Mandatory · In List View. Trainers are <code>Course Instructor</code>s (Users), not necessarily Employees.</td></tr>
+        <tr><td>Trainer Name</td><td><code>trainer_name</code></td><td>Data</td><td><code>fetch_from: trainer.full_name</code>, read-only, In List View</td></tr>
+        <tr><td>Meeting Date &amp; Time <span class="chg">CHANGED</span></td><td><code>meeting_datetime</code></td><td>Datetime</td><td>In List View. <b>Set by the Master Trainer when scheduling</b>; the trainer cannot edit it.</td></tr>
+        <tr><td>Recorded</td><td><code>recorded</code></td><td>Check</td><td>Set when this row’s date + feedback are filled, read-only</td></tr>
+        <tr><td>Feedback</td><td><code>feedback</code></td><td>Text Editor</td><td>Full text edited in the expanded row / portal</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:10px">In the portal each trainer edits only their own row; the desk grid shows a truncated preview and opens the full editor on click (standard Frappe child-table behaviour).</p>
+
+    <h3>Child DocType — Employee Feedback Session <span class="child">Is Child Table ✓</span> <span class="new">NEW</span></h3>
+    <p class="note">One row = one meeting + its own feedback. Used for <b>both</b> <code>manager_sessions</code> and <code>master_sessions</code>; the person is implied by the table (manager = the immediate manager, master = the assigned master trainer).</p>
+    <table class="tbl">
+      <thead>
+        <tr><th style="width:24%">Label</th><th style="width:24%">Fieldname</th><th>Fieldtype</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Meeting Date &amp; Time</td><td><code>meeting_datetime</code></td><td>Datetime</td><td><b>Set by the Master Trainer when scheduling</b>; In List View</td></tr>
+        <tr><td>Recorded</td><td><code>recorded</code></td><td>Check</td><td>Set when this session’s date + feedback are filled, read-only · In List View</td></tr>
+        <tr><td>Feedback</td><td><code>feedback</code></td><td>Text Editor</td><td>Written by the manager / master trainer for that session</td></tr>
+        <tr><td>Recorded By / On</td><td><code>recorded_by</code> · <code>recorded_on</code></td><td>Link → User · Datetime</td><td>Stamped on the 0→1 edge, read-only (audit)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 3 STATUS LIFECYCLE -->
+  <section class="block">
+    <h2>3 · Status Lifecycle <span class="chg">CHANGED</span></h2>
+    <p class="note">There is <b>no desk Workflow</b> and the doc is <b>not submittable</b>. The <code>status</code> field is driven entirely by the controller (<code>employee_feedback_form.py</code>) and the whitelisted portal actions (<code>employee_feedback.py</code>). The flow is now <b>schedule-first</b>: a Master Trainer sets every meeting time before any feedback can be entered.</p>
+
+    <h3>States</h3>
+    <table class="tbl">
+      <thead><tr><th>State</th><th>Indicator</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Draft</td><td><span class="pill grey">Grey</span></td><td>Auto-created on 100% completion; trainer rows present, nothing scheduled yet</td></tr>
+        <tr><td>Sessions Scheduled <span class="new">NEW</span></td><td><span class="pill amber">Blue/Orange</span></td><td>Master Trainer has set &amp; confirmed all meeting times; feedback is now open, times locked</td></tr>
+        <tr><td>Manager Feedback Added</td><td><span class="pill amber">Orange</span></td><td>Manager has recorded feedback</td></tr>
+        <tr><td>Trainer Feedback Added</td><td><span class="pill amber">Orange</span></td><td>Manager done <b>and</b> every trainer row recorded</td></tr>
+        <tr><td>Completed</td><td><span class="pill green">Green</span></td><td>Manager (if any) + all trainers + master all done; form is locked</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Transitions (portal actions)</h3>
+    <table class="tbl">
+      <thead><tr><th>Action</th><th>Effect</th><th>Who</th><th>Condition</th></tr></thead>
+      <tbody>
+        <tr><td><code>schedule_sessions</code> <span class="chg">CHANGED</span></td><td>Draft → Sessions Scheduled</td><td>Any Master Trainer / Admin</td><td>Takes <code>manager_times</code>, <code>master_times</code> (<b>multiple each</b>) + <code>trainer_times</code>; all valid (rules below). Scheduler self-assigns as <code>master_trainer</code>.</td></tr>
+        <tr><td><code>reschedule_sessions</code> <span class="new">NEW</span></td><td>any non-Completed → Draft</td><td>Any Master Trainer / Admin</td><td>Unlocks the times for editing; feedback already entered is kept; whoever re-confirms becomes <code>master_trainer</code>.</td></tr>
+        <tr><td><code>save_manager_feedback(…, row)</code> <span class="chg">CHANGED</span></td><td>→ Manager Feedback Added (when all manager sessions recorded)</td><td>Immediate Manager / Admin</td><td>Sessions scheduled; feedback text filled for that <b>manager session</b></td></tr>
+        <tr><td><code>save_trainer_feedback</code></td><td>→ Trainer Feedback Added (when all rows recorded)</td><td>The trainer on that row / Admin</td><td>Sessions scheduled; row feedback filled</td></tr>
+        <tr><td><code>save_master_feedback(…, row)</code> <span class="chg">CHANGED</span></td><td>Records that master session</td><td>The form's <code>master_trainer</code> / Admin</td><td>Sessions scheduled; feedback text filled for that <b>master session</b></td></tr>
+        <tr><td><code>complete_feedback</code></td><td>→ Completed (locks form)</td><td>The form's <code>master_trainer</code> / Admin <span class="chg">CHANGED</span></td><td>Manager (if any) + all trainer rows + master all recorded</td></tr>
+        <tr><td><code>reopen_feedback</code></td><td>Completed → Draft</td><td>L&amp;D Admin / HR</td><td>For corrections (returns to Draft, unscheduled)</td></tr>
+      </tbody>
+    </table>
+
+    <p class="callout"><b>Scheduling rules</b> (enforced on <code>schedule_sessions</code>): the MT may add <b>multiple manager and master sessions</b> (≥1 manager when the employee has a manager; ≥1 master). Every session time must be present and <b>in the future</b>; the order is strict by group — <code>all manager sessions &lt; all trainer sessions &lt; all master sessions</code>, each group in row order; each consecutive pair <b>≥15 minutes apart</b>; and no participant (matched by their User) may already have a feedback session whose <b>15-minute block overlaps</b> on another not-Completed form — else <code>"… already has a feedback session scheduled around …"</code>.</p>
+    <p class="callout"><b>Feedback opens only after scheduling.</b> The <code>save_*</code> actions reject edits until <code>sessions_scheduled</code> is set. Meeting times are owned by the Master Trainer and <b>locked</b> once confirmed — changing them requires a <b>reschedule</b> (back to Draft). <b>Complete</b> is gated on the manager (if any), every trainer row and the master being recorded; a completed form is locked until an admin <b>reopens</b> it.</p>
+    <p class="callout green"><b>Feedback recording is unordered.</b> Once the sessions are scheduled, the manager, trainers and master trainer may record their feedback in <b>any sequence</b> — the states are a progress indicator, not a gate. The only ordering enforced is on the <b>meeting times</b> (above), not on who writes feedback first. The single hard gate is <b>Complete</b>.</p>
+  </section>
+
+  <!-- 4 NOTIFICATIONS -->
+  <section class="block">
+    <h2>4 · Notifications</h2>
+    <p class="note">Built with the shared <code>_notify()</code> helper (<code>lms/lms/custom/notifications.py</code>) — each goes out as an in-app <code>Notification Log</code> entry <b>and</b> an email, exactly like the existing deadline/exit notifications. Master trainers resolve org-wide via <code>_get_master_trainers()</code> (users carrying the <code>Jamboree Master Trainer</code> role profile).</p>
+    <table class="tbl">
+      <thead><tr><th style="width:40%">Trigger</th><th>Recipients</th></tr></thead>
+      <tbody>
+        <tr><td>Form created<br><span class="note">employee completes an assigned course 100%</span></td><td>Immediate Manager (prompt to start) &nbsp;+&nbsp; <b>every pre-filled trainer</b> &nbsp;+&nbsp; all Master Trainers</td></tr>
+        <tr><td>Sessions scheduled <span class="new">NEW</span><br><span class="note">Master Trainer confirms all times — <code>notify_feedback_scheduled</code></span></td><td>Each participant gets <b>their own slot</b> (manager, every trainer, the master trainer) &nbsp;+&nbsp; the <b>Employee</b> gets the <b>full schedule</b></td></tr>
+        <tr><td>Manager feedback recorded</td><td>The Employee &nbsp;+&nbsp; all Master Trainers</td></tr>
+        <tr><td>Trainer feedback recorded<br><span class="note">resolved per row</span></td><td>That Trainer &nbsp;+&nbsp; the Immediate Manager &nbsp;+&nbsp; all Master Trainers</td></tr>
+        <tr><td>Completed <span class="new">NEW</span></td><td>The Employee &nbsp;+&nbsp; Manager &nbsp;+&nbsp; all Master Trainers &nbsp;+&nbsp; HR</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">Manager / employee recipients resolve from the link fields (<code>Employee.reports_to → user_id</code>). The <b>form-created</b> and lifecycle notifications still fan out to <b>all</b> org-wide master trainers (anyone could pick up the form to schedule), but once a Master Trainer schedules, the <b>sessions-scheduled</b> message and all subsequent master actions are tied to the <b>assigned</b> <code>master_trainer</code>. The scheduling notification lives in <code>notifications.py</code> (<code>notify_feedback_scheduled</code>); both in-app + email.</p>
+  </section>
+
+  <!-- 5 PERMISSIONS -->
+  <section class="block">
+    <h2>5 · Roles, Permissions &amp; Visibility</h2>
+    <p class="note">A form is visible only to the people tied to it (employee, manager, trainers) plus admins / master trainers. A general learner with no form sees nothing. Scoping reuses the existing Jamboree roles and the permission-hook pattern from <code>batch_enrollment_approval.py</code>.</p>
+    <table class="tbl">
+      <thead><tr><th>Role</th><th>Read</th><th>Write</th><th>Create</th><th>Complete</th><th>Scope</th></tr></thead>
+      <tbody>
+        <tr><td>LMS HR / System Manager</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td>All forms · can reopen</td></tr>
+        <tr><td>LMS Master Trainer</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td>All forms (org-wide reviewer)</td></tr>
+        <tr><td>LMS Manager (Immediate Manager)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td>Forms where they are the manager</td></tr>
+        <tr><td>LMS Trainer</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td>Forms where they appear in the trainer table</td></tr>
+        <tr><td>Employee (evaluatee) <span class="chg">CHANGED</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td>Read-only, only their own form (via the <code>LMS Student</code> read perm + the query)</td></tr>
+        <tr><td>LMS Student (general)</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td>Read perm granted, but the query scopes them to their own form(s) — <b>none for a general learner</b></td></tr>
+      </tbody>
+    </table>
+    <ul class="clean" style="margin-top:14px">
+      <li>Row-level scoping via <code>permission_query_conditions</code> → <code>employee_feedback.get_permission_query</code>: a user sees a form if they are the employee, the immediate manager, or appear in the trainer child table (a sub-query on <code>Employee Feedback Trainer.trainer</code>). Admins and master trainers see all. Mirrored by <code>has_permission</code> for single-doc access.</li>
+      <li>Role perms live on the DocType and are replicated as Custom DocPerm in <code>jamboree_setup.py</code>. <b>LMS Student gets read-only</b> <span class="chg">CHANGED</span> — the query then limits a student to <b>only their own</b> form (as the evaluatee), so a general learner still sees nothing. The evaluatee’s read-only view is reinforced by the capability flags (all <code>can_edit_*</code> false), and the whitelisted actions enforce per-action checks (e.g. only a master trainer may complete).</li>
+      <li><b>User Permissions bypassed on the Employee links</b> <span class="chg">CHANGED</span>: <code>employee</code> and <code>immediate_manager</code> carry <code>ignore_user_permissions: 1</code>. Jamboree sets a per-employee <code>User Permission</code> (Employee = self) on each user; without this flag Frappe would AND that restriction onto every Employee-linked doctype and hide a form from its own trainers / manager / evaluatee. Visibility is governed solely by the permission query above.</li>
+    </ul>
+  </section>
+
+  <!-- 6 PORTAL -->
+  <section class="block">
+    <h2>6 · Portal Delivery (frappe-ui) <span class="chg">CHANGED</span></h2>
+    <p class="note">Reviewers act in the existing Jamboree portal, not the desk. The original Module Def / Workspace / sidebar / Desktop Icon setup is <b>not used</b>; the DocType lives in the <code>LMS</code> module purely as the backing store.</p>
+    <ol class="steps">
+      <li>Route <code>/feedback/:name</code> → <code>EmployeeFeedbackForm.vue</code>. It loads <code>get_feedback_form(name)</code>, which returns the form plus per-user capability flags (<code>can_schedule</code>, <code>can_reschedule</code> <span class="new">NEW</span>, <code>can_edit_manager</code>, <code>can_edit_trainer</code>, <code>can_edit_master</code>, <code>can_complete</code>, <code>can_reopen</code>, <code>is_readonly</code>) plus <code>sessions_scheduled</code> and <code>master_trainer</code>.</li>
+      <li><b>Schedule panel</b> <span class="new">NEW</span>: when <code>can_schedule</code> (Master Trainer / admin, form still Draft) the page shows date-time pickers for the manager (if any), every trainer and the master, and a <b>Confirm Schedule</b> button (<code>schedule_sessions</code>). Order/gap/conflict errors come back from the controller and surface via <code>toast</code>. Once scheduled, a <b>Reschedule</b> button (<code>reschedule_sessions</code>) is shown instead.</li>
+      <li>Feedback sections stay <b>locked until <code>sessions_scheduled</code></b>. After that, each is editable only per the flags: the manager block for the manager, the caller’s own trainer row, the master block + <b>Complete &amp; Submit</b> for the assigned <code>master_trainer</code>; the scheduled meeting time is shown <b>read-only</b> in every section. Everything else is read-only.</li>
+      <li><code>EmployeeFeedbackList.vue</code> (a “Pending Feedback” card) is embedded in the <b>Trainer Dashboard</b>, <b>Manager Dashboard</b> and <b>Employee Detail</b> pages, calling <code>list_my_feedback_forms</code> and surfacing items that need the user’s action first.</li>
+      <li><b>Left-menu link</b> <span class="new">NEW</span>: a <b>Management → Employee Feedback</b> item (<code>src/utils/index.js</code>) routes to <code>/feedback</code> → <code>EmployeeFeedback.vue</code>, a full-page list of every form the user can act on (or view). Shown to all reviewers, and to an <b>evaluatee only when they actually have a form</b> — gated by <code>canSeeEmployeeFeedback()</code> using a new <code>has_employee_feedback</code> flag on <code>get_user_info</code>.</li>
+      <li><b>Filters</b> <span class="new">NEW</span>: the <code>/feedback</code> page shows a <b>Course</b>, <b>Immediate Manager</b> and <b>Status</b> filter bar (a <code>showFilters</code> prop on <code>EmployeeFeedbackList.vue</code>; the dashboard cards omit it). Filtering is client-side over the permission-scoped list; options are derived from the data actually present (the payload now also returns <code>immediate_manager_name</code>), and a <b>Clear</b> button resets them.</li>
+      <li>The evaluatee opens their own form <b>read-only</b> via the same route (allowed by the permission query; every edit control is hidden by the capability flags).</li>
+      <li>A small desk client script (<code>employee_feedback_form.js</code>) exposes Complete / Reopen buttons for admins who work in the desk.</li>
+    </ol>
+  </section>
+
+  <!-- 7 CONTROLLER -->
+  <section class="block">
+    <h2>7 · Controller Logic</h2>
+    <h3>Auto-creation on course completion</h3>
+    <ul class="clean">
+      <li>Hooked on <code>LMS Enrollment.on_update</code> → <code>employee_feedback.create_feedback_form_on_completion</code> (alongside the existing completion notifier). When <code>progress &gt;= 100</code>: resolve the active <code>Employee</code> for the learner, resolve the assignment micro-batch (the batch the member is enrolled in that carries the course), and create one form with <code>employee</code>, <code>course</code>, <code>batch</code>, <code>completed_on</code>.</li>
+      <li><b>Assigned-employees only:</b> if the learner is not an active Employee, or has no assignment batch (e.g. self-enrolled), no form is created.</li>
+      <li><b>Uniqueness</b> on <code>employee + course</code> — the same completion can’t spawn two forms.</li>
+      <li><b>Trainer rows pre-filled</b> from the batch’s <code>Course Instructor</code> rows.</li>
+    </ul>
+    <h3>Scheduling rules <span class="new">NEW</span></h3>
+    <ul class="clean">
+      <li><code>schedule_sessions</code> sets every meeting time, self-assigns <code>master_trainer</code>, runs the cross-form conflict check (<code>_busy_blocks</code> / <code>_check_conflicts</code>, skipping Completed forms), then saves with <code>flags.scheduling</code>; <code>validate_schedule()</code> enforces all-present + future + strict order + ≥15-min gaps; on success <code>sessions_scheduled = 1</code> and the status moves to <b>Sessions Scheduled</b>.</li>
+      <li>Meeting times are <b>locked</b> after confirm: a tamper-guard in <code>validate()</code> throws if any datetime changes on a scheduled form outside a (re)schedule. <code>reschedule_sessions</code> sets <code>flags.rescheduling</code> → back to Draft with times editable; feedback is preserved.</li>
+    </ul>
+    <h3>Feedback &amp; completion rules</h3>
+    <ul class="clean">
+      <li><code>validate()</code>: set each <b>session/row</b>’s <code>recorded</code> (and stamp <i>recorded_by/on</i>) when its (MT-set) date + feedback are filled; recompute <code>status</code> (which starts at <b>Sessions Scheduled</b> once scheduled). A role is "done" when <b>all</b> its sessions are recorded.</li>
+      <li>The <code>save_*</code> actions reject feedback until <code>sessions_scheduled</code>, and target a specific session <code>row</code>. Master feedback + completion are restricted to the form's assigned <code>master_trainer</code> (or an admin).</li>
+      <li>Block <b>Complete</b> unless <b>every</b> manager session (when the employee has a manager), <b>every</b> trainer row, and <b>every</b> master session are recorded — otherwise <code>frappe.throw(...)</code>.</li>
+      <li>Status is driven by the controller and the whitelisted actions, never by writing the field from the UI; a Completed form is locked until <code>reopen_feedback</code>.</li>
+    </ul>
+  </section>
+
+  <!-- 8 DECISIONS -->
+  <section class="block">
+    <h2>8 · Resolved Decisions</h2>
+    <div class="assume">
+      <p><b>1.</b> Completion is read from <code>LMS Enrollment.progress &gt;= 100</code> (the same signal the existing completion notifier uses); <code>course</code> links to <code>LMS Course</code>.</p>
+      <p><b>2.</b> Master trainers are <b>org-wide</b> by role profile (<code>Jamboree Master Trainer</code>) for visibility and the form-created notification, but <b>scheduling self-assigns one</b> <span class="chg">CHANGED</span>: whoever confirms the schedule is written to <code>master_trainer</code> and is the only one (besides admins) who can record master feedback or complete. Rescheduling re-assigns it to whoever re-confirms.</p>
+      <p><b>3.</b> <b>Trainers are pre-filled</b> from the course assignment (the micro-batch instructors); there is no manual “assign trainers” step. Trainers are Users.</p>
+      <p><b>4.</b> Reviewers (manager, trainers, master trainers) are linked to Frappe Users, so notifications route to real logins. The immediate manager resolves via <code>Employee.reports_to → user_id</code>.</p>
+      <p><b>5.</b> One form per <b>employee + course</b>; only for <b>assigned</b> employees. Repeat assignments of the same course would need an attempt/cycle field (not in scope).</p>
+      <p><b>6.</b> <span class="new">NEW</span> <b>Meeting times are owned by the Master Trainer.</b> The MT sets the manager's, every trainer's and the master's time in a single <b>Schedule</b> step; no other user can edit a time. Feedback opens only after all times are confirmed.</p>
+      <p><b>7.</b> <span class="new">NEW</span> <b>Ordering &amp; gap:</b> strict <code>manager &lt; trainer&nbsp;1 &lt; trainer&nbsp;2 &lt; … &lt; master</code> in row order, ≥15 minutes apart, all in the future.</p>
+      <p><b>8.</b> <span class="new">NEW</span> <b>Conflict:</b> each meeting is a 15-minute block; a participant (matched by User) cannot be scheduled where their block overlaps one they already have on another <b>not-Completed</b> form.</p>
+      <p><b>9.</b> <span class="new">NEW</span> <b>No manager:</b> if the employee has no <code>reports_to</code>, the manager slot is skipped (order becomes trainers&nbsp;&lt;&nbsp;master) and completion does not require manager feedback.</p>
+      <p><b>10.</b> <span class="new">NEW</span> <b>Lock &amp; reschedule:</b> confirmed times are locked; the MT/admin can <b>Reschedule</b> (back to Draft, feedback preserved, everyone re-notified).</p>
+      <p><b>11.</b> <span class="new">NEW</span> <b>Multiple manager / master sessions:</b> the manager and the master trainer can each have several sessions (own meeting + feedback) in the <code>manager_sessions</code> / <code>master_sessions</code> tables (≥1 each, manager skipped if none). The group order &amp; ≥15-min gap apply across all of them, and a role is done only when <b>all</b> its sessions are recorded. Existing forms are migrated to one session row each.</p>
+    </div>
+  </section>
+
+  <!-- 9 ROSTER MAINTENANCE -->
+  <section class="block">
+    <h2>9 · Roster Maintenance <span class="new">NEW</span></h2>
+    <p class="note">The roster can change after a form exists. Both paths sync the <b>(employee, course)</b> non-Completed form; Completed forms are never touched. If no form exists yet, the future auto-created form simply picks up the current roster.</p>
+
+    <h3>Edit trainers — <code>/assign-course</code></h3>
+    <p>An <b>"Edit Trainers"</b> action on each assignment row opens a multi-select dialog (pre-filled with the current trainers) → <code>course_assignment.update_assignment_trainers(batch, trainers)</code>, which rewrites the batch's <code>Course Instructor</code> rows and calls <code>employee_feedback.sync_assignment_trainers_to_feedback</code>.</p>
+    <ul class="clean">
+      <li><b>Add a trainer</b> → a <code>trainer_feedback</code> row is added; if the form was already scheduled it drops back to <b>Draft</b> for rescheduling. The new trainer is notified and the master trainer / HR are nudged to (re)schedule.</li>
+      <li><b>Remove a trainer</b> → the row (and its slot) is dropped <b>only if not yet recorded</b>; a trainer who already gave feedback is <b>kept</b>. Removal-only changes keep the existing schedule (a <code>syncing_roster</code> flag bypasses the locked-times guard).</li>
+    </ul>
+
+    <h3>Change manager — <code>/employees/:id</code></h3>
+    <p><code>dashboard_api.update_employee_manager</code> sets <code>Employee.reports_to</code> then calls <code>employee_feedback.sync_manager_to_feedback</code>:</p>
+    <ul class="clean">
+      <li>On each non-Completed form, if <b>no</b> manager session is recorded → set <code>immediate_manager</code> to the new manager (keeping the scheduled manager session times); the new manager is notified. If manager feedback is already recorded → leave it unchanged.</li>
+      <li><b>Removing</b> the manager clears <code>manager_sessions</code> (no one to attend).</li>
+      <li><code>immediate_manager</code> uses <code>fetch_if_empty: 1</code> <span class="chg">CHANGED</span> so it's pinned at creation and isn't silently re-fetched on later saves — without this the "don't change once feedback is saved" rule couldn't hold.</li>
+    </ul>
+  </section>
+
+  <!-- 10 CALENDAR SYNC -->
+  <section class="block">
+    <h2>10 · Calendar Sync <span class="new">NEW</span></h2>
+    <p class="note">Each scheduled session is mirrored as a Frappe <code>Event</code> that invites the <b>reviewer + the employee</b> (15-minute block, no video link), reusing Frappe's built-in <b>Event → Google Calendar</b> push (<code>frappe/integrations/doctype/google_calendar</code>). Logic in <code>lms/lms/custom/feedback_calendar.py</code>.</p>
+    <ul class="clean">
+      <li><b>Mechanism:</b> Google emails an invite to every attendee (any provider) because <code>get_attendees()</code> reads each <code>event_participants.email</code>. A Frappe User's name <i>is</i> the email, so the reviewer + employee are added directly.</li>
+      <li><b>Organizer / account:</b> <code>_resolve_google_calendar()</code> prefers a <code>Google Calendar</code> the scheduling master trainer has connected (push enabled) so the <b>MT organizes</b>; else any push-enabled calendar (site default). If none is connected, the Event is still created (visible on the in-app desk Calendar) with sync <b>off</b> — never errors.</li>
+      <li><b>Reconcile (update + cancel):</b> <code>sync_feedback_calendar(form)</code> is idempotent, keyed by <code>custom_feedback_key</code> (<code>manager:&lt;i&gt;</code> / <code>trainer:&lt;user&gt;</code> / <code>master:&lt;i&gt;</code>) and back-linked via the hidden <code>custom_feedback_form</code> Custom Field on Event. It creates new session events, updates changed ones in place, and cancels (deletes) ones no longer present; when the form is unscheduled (reschedule / reopen) it cancels them all.</li>
+      <li><b>Triggers:</b> called after save from <code>schedule_sessions</code> (invites), <code>reschedule_sessions</code> / <code>reopen_feedback</code> (cancel), <code>sync_assignment_trainers_to_feedback</code> (cancel a removed trainer), and <code>sync_manager_to_feedback</code> (update / cancel the manager's event). Fully guarded — a calendar failure is logged and never blocks the feedback flow.</li>
+      <li><b>Setup:</b> the hidden Event fields are created by <code>install.setup_feedback_event_custom_fields</code> (wired into <code>after_sync</code> + <code>after_migrate</code>). To enable external sync, connect a Google Calendar (OAuth, push enabled) — ideally the master trainer's.</li>
+    </ul>
+  </section>
+
+</div>
+</body>
+</html>

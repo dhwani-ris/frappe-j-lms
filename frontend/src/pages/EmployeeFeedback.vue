@@ -13,7 +13,11 @@
 		</header>
 
 		<div class="p-5">
-			<EmployeeFeedbackList :heading="__('Employee Feedback')" :show-empty="true" />
+			<EmployeeFeedbackList
+				:heading="__('Employee Feedback')"
+				:show-empty="true"
+				:show-filters="true"
+			/>
 		</div>
 	</div>
 </template>

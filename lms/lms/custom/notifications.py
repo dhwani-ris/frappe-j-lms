@@ -462,45 +462,51 @@ def notify_feedback_scheduled(form):
 	def fmt(dt):
 		return format_datetime(dt) if dt else "—"
 
-	def slot(recipient, role_phrase, when):
-		if not recipient or not when:
+	def slot(recipient, role_phrase, whens):
+		whens = [w for w in whens if w]
+		if not recipient or not whens:
 			return
+		times = ", ".join(fmt(w) for w in whens)
+		plural = "s" if len(whens) > 1 else ""
 		_notify(
 			recipient,
 			from_user,
-			f"Feedback session scheduled with {employee_name}",
+			f"Feedback session{plural} scheduled with {employee_name}",
 			(
 				f"Your {role_phrase} for <strong>{employee_name}</strong> "
-				f"({course_title}) is scheduled on <strong>{fmt(when)}</strong>."
+				f"({course_title}) {'are' if plural else 'is'} scheduled on <strong>{times}</strong>."
 			),
 			EMPLOYEE_FEEDBACK_DOCTYPE,
 			form.name,
 		)
 
-	# Manager
+	# Manager — may have several sessions
 	if form.immediate_manager:
 		manager_user = frappe.db.get_value("Employee", form.immediate_manager, "user_id")
-		slot(manager_user, "manager feedback session", form.manager_meeting_datetime)
+		slot(manager_user, "manager feedback session", [r.meeting_datetime for r in form.manager_sessions])
 
 	# Each trainer
 	for row in form.trainer_feedback:
-		slot(row.trainer, "trainer feedback session", row.meeting_datetime)
+		slot(row.trainer, "trainer feedback session", [row.meeting_datetime])
 
-	# Master trainer
-	slot(form.master_trainer, "master-trainer feedback session", form.master_meeting_datetime)
+	# Master trainer — may have several sessions
+	slot(form.master_trainer, "master-trainer feedback session", [r.meeting_datetime for r in form.master_sessions])
 
 	# Employee: the full schedule
 	if employee_user:
 		lines = []
-		if form.immediate_manager and form.manager_meeting_datetime:
-			lines.append(f"Manager: {fmt(form.manager_meeting_datetime)}")
+		if form.immediate_manager:
+			for r in form.manager_sessions:
+				if r.meeting_datetime:
+					lines.append(f"Manager: {fmt(r.meeting_datetime)}")
 		for row in form.trainer_feedback:
 			if row.meeting_datetime:
 				lines.append(
 					f"Trainer ({row.trainer_name or row.trainer}): {fmt(row.meeting_datetime)}"
 				)
-		if form.master_meeting_datetime:
-			lines.append(f"Master Trainer: {fmt(form.master_meeting_datetime)}")
+		for r in form.master_sessions:
+			if r.meeting_datetime:
+				lines.append(f"Master Trainer: {fmt(r.meeting_datetime)}")
 		_notify(
 			employee_user,
 			from_user,
