@@ -618,6 +618,45 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		form.reload()
 		self.assertEqual(form.immediate_manager, self.emp_manager)  # unchanged
 
+	def test_recorded_by_preserved_on_reschedule_and_add(self):
+		form = self._complete()
+		self._schedule(form)
+		form.reload()
+		mgr_row = form.manager_sessions[0].name
+		with patch("frappe.sendmail"):
+			self._as(self.manager.name, ef.save_manager_feedback, form.name, "Mgr note.", mgr_row)
+		form.reload()
+		self.assertEqual(form.manager_sessions[0].recorded_by, self.manager.name)
+
+		# Reschedule, then re-confirm as the MT while ADDING a second master session.
+		base = add_to_date(now_datetime(), days=2)
+		with patch("frappe.sendmail"):
+			self._as(self.master.name, ef.reschedule_sessions, form.name)
+			form.reload()
+			manager_times = [{"row": form.manager_sessions[0].name, "meeting_datetime": base}]
+			trainer_times = [
+				{"trainer": r.trainer, "meeting_datetime": add_to_date(base, minutes=20)}
+				for r in form.trainer_feedback
+			]
+			master_times = [
+				{"row": form.master_sessions[0].name, "meeting_datetime": add_to_date(base, minutes=40)},
+				{"meeting_datetime": add_to_date(base, minutes=60)},  # added session
+			]
+			self._as(
+				self.master.name,
+				ef.schedule_sessions,
+				form.name,
+				manager_times,
+				master_times,
+				trainer_times,
+			)
+		form.reload()
+		self.assertEqual(len(form.master_sessions), 2)
+		# The original manager feedback's recorder must survive the reschedule + rebuild —
+		# it must NOT be re-stamped to the rescheduling master trainer.
+		self.assertTrue(form.manager_sessions[0].recorded)
+		self.assertEqual(form.manager_sessions[0].recorded_by, self.manager.name)
+
 	def test_manager_removed_clears_sessions(self):
 		form = self._complete()
 		self._schedule(form)
