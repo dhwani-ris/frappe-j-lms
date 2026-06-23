@@ -690,6 +690,59 @@ class TestEmployeeFeedbackForm(FrappeTestCase):
 		self.assertIn("manager:0", by_key)
 		self.assertIn("eff_mgr2@example.com", self._event_emails(by_key["manager:0"]))
 
+	# ── notification recipients ─────────────────────────────────────────────
+	def _logs(self, user, form, subject_like):
+		return frappe.get_all(
+			"Notification Log",
+			{"for_user": user, "document_name": form.name, "subject": ["like", subject_like]},
+			pluck="name",
+		)
+
+	def test_manager_feedback_notifies_trainers(self):
+		form = self._complete()
+		self._schedule(form)
+		form.reload()
+		with patch("frappe.sendmail"):
+			self._as(
+				self.manager.name,
+				ef.save_manager_feedback,
+				form.name,
+				"Good.",
+				form.manager_sessions[0].name,
+			)
+		self.assertTrue(self._logs(self.trainer.name, form, "%Manager feedback%"))
+
+	def test_trainer_feedback_notifies_employee_and_other_trainers(self):
+		form = self._complete()
+		trainer2 = self._user("eff_trainer2@example.com", "Eff", "Trainer2", ["LMS Trainer"])
+		with patch("frappe.sendmail"):
+			ef.sync_assignment_trainers_to_feedback(self.batch.name, [self.trainer.name, trainer2.name])
+			form.reload()
+			self._schedule_spaced(form)
+			self._as(self.trainer.name, ef.save_trainer_feedback, form.name, "Mock done.")
+		self.assertTrue(self._logs(self.learner.name, form, "%Trainer feedback%"))
+		self.assertTrue(self._logs(trainer2.name, form, "%Trainer feedback%"))
+
+	def test_master_feedback_notifies_trainers(self):
+		form = self._complete()
+		self._schedule(form)
+		form.reload()
+		with patch("frappe.sendmail"):
+			self._as(
+				self.master.name,
+				ef.save_master_feedback,
+				form.name,
+				"Endorsed.",
+				form.master_sessions[0].name,
+			)
+		self.assertTrue(self._logs(self.trainer.name, form, "%Master trainer feedback%"))
+
+	def test_schedule_confirmation_to_master_trainer(self):
+		form = self._complete()
+		with patch("frappe.sendmail"):
+			self._schedule(form)
+		self.assertTrue(self._logs(self.master.name, form, "%Mock interviews scheduled%"))
+
 	def test_calendar_manager_event_cancelled_when_manager_removed(self):
 		form = self._complete()
 		with self._no_google(), patch("frappe.sendmail"):

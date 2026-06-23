@@ -339,9 +339,10 @@ table.
 | Event | Function | Recipients |
 |---|---|---|
 | Form created | `employee_feedback.notify_form_created` | manager + every pre-filled trainer + all master trainers |
-| **Sessions scheduled** | `notifications.notify_feedback_scheduled` | each participant gets **their slot**; the **employee** gets the **full schedule** |
-| Manager feedback recorded | `employee_feedback.notify_manager_feedback` | employee + all master trainers |
-| Trainer feedback recorded | `employee_feedback.notify_trainer_feedback` | that trainer + manager + all master trainers |
+| **Sessions scheduled** | `notifications.notify_feedback_scheduled` | each participant gets **their slot**; the **employee** gets the **full schedule** (named); the scheduling MT gets a "scheduled successfully" confirmation |
+| Manager feedback recorded | `employee_feedback.notify_manager_feedback` | employee + **all assigned trainers** + all master trainers |
+| Trainer feedback recorded | `employee_feedback.notify_trainer_feedback` | employee + manager + all master trainers + **other assigned trainers** |
+| Master trainer feedback recorded | `employee_feedback.notify_master_feedback` | employee + manager + **all assigned trainers** |
 | Completed | `employee_feedback.notify_completed` | employee + manager + all master trainers + HR |
 
 - Master trainers for the **org-wide** events resolve via `_get_master_trainers()`

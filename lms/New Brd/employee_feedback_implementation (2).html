@@ -215,9 +215,10 @@
       <thead><tr><th style="width:40%">Trigger</th><th>Recipients</th></tr></thead>
       <tbody>
         <tr><td>Form created<br><span class="note">employee completes an assigned course 100%</span></td><td>Immediate Manager (prompt to start) &nbsp;+&nbsp; <b>every pre-filled trainer</b> &nbsp;+&nbsp; all Master Trainers</td></tr>
-        <tr><td>Sessions scheduled <span class="new">NEW</span><br><span class="note">Master Trainer confirms all times — <code>notify_feedback_scheduled</code></span></td><td>Each participant gets <b>their own slot</b> (manager, every trainer, the master trainer) &nbsp;+&nbsp; the <b>Employee</b> gets the <b>full schedule</b></td></tr>
-        <tr><td>Manager feedback recorded</td><td>The Employee &nbsp;+&nbsp; all Master Trainers</td></tr>
-        <tr><td>Trainer feedback recorded<br><span class="note">resolved per row</span></td><td>That Trainer &nbsp;+&nbsp; the Immediate Manager &nbsp;+&nbsp; all Master Trainers</td></tr>
+        <tr><td>Sessions scheduled <span class="new">NEW</span><br><span class="note">Master Trainer confirms all times — <code>notify_feedback_scheduled</code></span></td><td>Each participant gets <b>their own slot</b> (manager, every trainer, the master trainer) &nbsp;+&nbsp; the <b>Employee</b> gets the <b>full schedule</b> (each line names the person) &nbsp;+&nbsp; the scheduling Master Trainer gets a "scheduled successfully" confirmation</td></tr>
+        <tr><td>Manager feedback recorded <span class="chg">CHANGED</span></td><td>The Employee &nbsp;+&nbsp; <b>all assigned Trainers</b> &nbsp;+&nbsp; all Master Trainers</td></tr>
+        <tr><td>Trainer feedback recorded <span class="chg">CHANGED</span><br><span class="note">resolved per row</span></td><td>The Employee &nbsp;+&nbsp; the Immediate Manager &nbsp;+&nbsp; all Master Trainers &nbsp;+&nbsp; <b>other assigned Trainers</b></td></tr>
+        <tr><td>Master trainer feedback recorded <span class="new">NEW</span></td><td>The Employee &nbsp;+&nbsp; the Immediate Manager &nbsp;+&nbsp; <b>all assigned Trainers</b></td></tr>
         <tr><td>Completed <span class="new">NEW</span></td><td>The Employee &nbsp;+&nbsp; Manager &nbsp;+&nbsp; all Master Trainers &nbsp;+&nbsp; HR</td></tr>
       </tbody>
     </table>

@@ -492,21 +492,29 @@ def notify_feedback_scheduled(form):
 	# Master trainer — may have several sessions
 	slot(form.master_trainer, "master-trainer feedback session", [r.meeting_datetime for r in form.master_sessions])
 
-	# Employee: the full schedule
+	# Employee: the full schedule, naming the person for each session.
 	if employee_user:
+		manager_name = (
+			frappe.db.get_value("Employee", form.immediate_manager, "employee_name")
+			if form.immediate_manager
+			else None
+		) or "Manager"
+		master_name = (
+			frappe.db.get_value("User", form.master_trainer, "full_name") or form.master_trainer
+		) if form.master_trainer else "Master Trainer"
 		lines = []
 		if form.immediate_manager:
 			for r in form.manager_sessions:
 				if r.meeting_datetime:
-					lines.append(f"Manager: {fmt(r.meeting_datetime)}")
+					lines.append(f"Mock with Manager {manager_name}: {fmt(r.meeting_datetime)}")
 		for row in form.trainer_feedback:
 			if row.meeting_datetime:
 				lines.append(
-					f"Trainer ({row.trainer_name or row.trainer}): {fmt(row.meeting_datetime)}"
+					f"Mock with Trainer {row.trainer_name or row.trainer}: {fmt(row.meeting_datetime)}"
 				)
 		for r in form.master_sessions:
 			if r.meeting_datetime:
-				lines.append(f"Master Trainer: {fmt(r.meeting_datetime)}")
+				lines.append(f"Mock with Master Trainer {master_name}: {fmt(r.meeting_datetime)}")
 		_notify(
 			employee_user,
 			from_user,
@@ -514,6 +522,20 @@ def notify_feedback_scheduled(form):
 			(
 				f"Your feedback sessions for <strong>{course_title}</strong> are scheduled:<br>"
 				+ "<br>".join(lines)
+			),
+			EMPLOYEE_FEEDBACK_DOCTYPE,
+			form.name,
+		)
+
+	# Master trainer: a "scheduled successfully" confirmation.
+	if form.master_trainer:
+		_notify(
+			form.master_trainer,
+			from_user,
+			f"Mock interviews scheduled for {employee_name}",
+			(
+				f"You have scheduled the feedback sessions for <strong>{employee_name}</strong> "
+				f"({course_title}) successfully."
 			),
 			EMPLOYEE_FEEDBACK_DOCTYPE,
 			form.name,
