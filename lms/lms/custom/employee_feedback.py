@@ -720,6 +720,11 @@ def _fan_out(recipients, from_user, subject, message, form_name):
 		_notify(recipient, from_user, subject, message, DOCTYPE, form_name)
 
 
+def _form_trainers(form):
+	"""All trainer Users on the form."""
+	return [r.trainer for r in form.trainer_feedback if r.trainer]
+
+
 def notify_form_created(form):
 	employee_name, course_title, from_user = _context(form)
 	manager_user = _manager_user(form)
@@ -764,7 +769,8 @@ def notify_form_created(form):
 def notify_manager_feedback(form):
 	employee_name, course_title, from_user = _context(form)
 	employee_user = _employee_user(form.employee)
-	recipients = [employee_user, *_get_master_trainers()]
+	# Employee + all assigned trainers + master trainers (manager is the submitter).
+	recipients = [employee_user, *_form_trainers(form), *_get_master_trainers()]
 	_fan_out(
 		recipients,
 		from_user,
@@ -780,7 +786,10 @@ def notify_manager_feedback(form):
 def notify_trainer_feedback(form, trainer):
 	employee_name, course_title, from_user = _context(form)
 	manager_user = _manager_user(form)
-	recipients = [trainer, manager_user, *_get_master_trainers()]
+	employee_user = _employee_user(form.employee)
+	# Employee + manager + master trainers + other assigned trainers (exclude the submitter).
+	other_trainers = [t for t in _form_trainers(form) if t != trainer]
+	recipients = [employee_user, manager_user, *_get_master_trainers(), *other_trainers]
 	_fan_out(
 		recipients,
 		from_user,
@@ -797,7 +806,8 @@ def notify_master_feedback(form):
 	employee_name, course_title, from_user = _context(form)
 	employee_user = _employee_user(form.employee)
 	manager_user = _manager_user(form)
-	recipients = [employee_user, manager_user]
+	# Employee + manager + all assigned trainers (master is the submitter).
+	recipients = [employee_user, manager_user, *_form_trainers(form)]
 	_fan_out(
 		recipients,
 		from_user,

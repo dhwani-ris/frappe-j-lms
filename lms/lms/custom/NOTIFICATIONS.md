@@ -177,9 +177,10 @@ live alongside the form logic in
 | Event | Function | Recipients |
 |---|---|---|
 | Form created (employee finished an assigned course) | `employee_feedback.notify_form_created` | Immediate manager + every pre-filled trainer + all master trainers |
-| **Sessions scheduled** (Master Trainer confirms all times) | `notify_feedback_scheduled` | Each participant gets **their own slot** (manager, every trainer, the master trainer); the **employee** gets the **full schedule** |
-| Manager feedback recorded | `employee_feedback.notify_manager_feedback` | Employee + all master trainers |
-| Trainer feedback recorded (per row) | `employee_feedback.notify_trainer_feedback` | That trainer + manager + all master trainers |
+| **Sessions scheduled** (Master Trainer confirms all times) | `notify_feedback_scheduled` | Each participant gets **their own slot** (manager, every trainer, the master trainer); the **employee** gets the **full schedule** (each line names the person); the **scheduling master trainer** also gets a "scheduled successfully" confirmation |
+| Manager feedback recorded | `employee_feedback.notify_manager_feedback` | Employee + **all assigned trainers** + all master trainers |
+| Trainer feedback recorded (per row) | `employee_feedback.notify_trainer_feedback` | Employee + manager + all master trainers + **other assigned trainers** (not the submitter) |
+| Master trainer feedback recorded | `employee_feedback.notify_master_feedback` | Employee + manager + **all assigned trainers** |
 | Completed | `employee_feedback.notify_completed` | Employee + manager + all master trainers + HR |
 
 ### Sessions scheduled — details
