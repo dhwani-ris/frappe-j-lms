@@ -164,19 +164,22 @@ class EmployeeFeedbackForm(Document):
 
 	def set_session_flags(self, before=None):
 		"""Mark each session/row as recorded once its meeting date + feedback text are
-		both present, and stamp who recorded it (on the 0→1 edge)."""
-		prev = {}
-		if before:
-			for r in list(before.manager_sessions) + list(before.master_sessions):
-				prev[r.name] = cint(r.recorded)
+		both present, and stamp who recorded it.
 
+		The stamp is set on the *first* record only and then preserved. We key off the
+		existing ``recorded_by`` rather than a before/after row-name diff because
+		rescheduling rebuilds the session tables with new row names (``_reconcile_sessions``
+		copies the feedback + stamp onto the new rows) — a name-based diff would wrongly
+		re-stamp the rescheduling Master Trainer over the original recorder.
+		"""
 		for row in list(self.manager_sessions) + list(self.master_sessions):
 			recorded = 1 if (row.meeting_datetime and _has_text(row.feedback)) else 0
 			row.recorded = recorded
-			if recorded and not prev.get(row.name, 0):
-				row.recorded_by = frappe.session.user
-				row.recorded_on = now_datetime()
-			elif not recorded:
+			if recorded:
+				if not row.recorded_by:
+					row.recorded_by = frappe.session.user
+					row.recorded_on = now_datetime()
+			else:
 				row.recorded_by = None
 				row.recorded_on = None
 

@@ -166,7 +166,7 @@
         <tr><td>Meeting Date &amp; Time</td><td><code>meeting_datetime</code></td><td>Datetime</td><td><b>Set by the Master Trainer when scheduling</b>; In List View</td></tr>
         <tr><td>Recorded</td><td><code>recorded</code></td><td>Check</td><td>Set when this session’s date + feedback are filled, read-only · In List View</td></tr>
         <tr><td>Feedback</td><td><code>feedback</code></td><td>Text Editor</td><td>Written by the manager / master trainer for that session</td></tr>
-        <tr><td>Recorded By / On</td><td><code>recorded_by</code> · <code>recorded_on</code></td><td>Link → User · Datetime</td><td>Stamped on the 0→1 edge, read-only (audit)</td></tr>
+        <tr><td>Recorded By / On</td><td><code>recorded_by</code> · <code>recorded_on</code></td><td>Link → User · Datetime</td><td>The user who saved the session (= <code>frappe.session.user</code>), stamped on <b>first record</b> and <b>preserved</b> thereafter (read-only audit). <span class="chg">CHANGED</span> Not re-stamped when a reschedule rebuilds the session rows — so the original manager/master recorder survives an add/reschedule.</td></tr>
       </tbody>
     </table>
   </section>
@@ -280,7 +280,7 @@
     </ul>
     <h3>Feedback &amp; completion rules</h3>
     <ul class="clean">
-      <li><code>validate()</code>: set each <b>session/row</b>’s <code>recorded</code> (and stamp <i>recorded_by/on</i>) when its (MT-set) date + feedback are filled; recompute <code>status</code> (which starts at <b>Sessions Scheduled</b> once scheduled). A role is "done" when <b>all</b> its sessions are recorded.</li>
+      <li><code>validate()</code>: set each <b>session/row</b>’s <code>recorded</code> when its (MT-set) date + feedback are filled, and stamp <code>recorded_by</code>/<code>recorded_on</code> = the saving user <b>on first record only</b> (preserved afterwards, so a reschedule that rebuilds the session rows never re-stamps the original recorder); recompute <code>status</code> (which starts at <b>Sessions Scheduled</b> once scheduled). A role is "done" when <b>all</b> its sessions are recorded.</li>
       <li>The <code>save_*</code> actions reject feedback until <code>sessions_scheduled</code>, and target a specific session <code>row</code>. Master feedback + completion are restricted to the form's assigned <code>master_trainer</code> (or an admin).</li>
       <li>Block <b>Complete</b> unless <b>every</b> manager session (when the employee has a manager), <b>every</b> trainer row, and <b>every</b> master session are recorded — otherwise <code>frappe.throw(...)</code>.</li>
       <li>Status is driven by the controller and the whitelisted actions, never by writing the field from the UI; a Completed form is locked until <code>reopen_feedback</code>.</li>

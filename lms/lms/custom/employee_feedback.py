@@ -17,7 +17,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, format_datetime, get_datetime, today
+from frappe.utils import cint, format_datetime, get_datetime, getdate, today
 from frappe.utils.user import get_users_with_role
 
 from lms.lms.custom.feedback_calendar import sync_feedback_calendar
@@ -212,29 +212,27 @@ def _check_conflicts(form, scheduler_user):
 # ---------------------------------------------------------------------------
 
 
-def create_feedback_form_on_completion(doc, method=None):
-	"""When an enrolled employee hits 100%, create exactly one feedback form for the
-	employee + course — but only for *assigned* employees (those with an assignment
-	micro-batch carrying trainers) and only once per employee + course."""
-	if cint(doc.progress) < 100:
-		return
-
-	employee = _employee_for_user(doc.member, active_only=True)
+def _eligible_for_feedback(member, course):
+	"""A form is created only for an *assigned* active employee (a micro-batch carries the
+	course) and only once per employee + course. Returns (employee, batch) or None."""
+	employee = _employee_for_user(member, active_only=True)
 	if not employee:
-		return  # only employees get an Employee Feedback Form
-
-	batch = _resolve_micro_batch(doc.member, doc.course)
+		return None  # only employees get an Employee Feedback Form
+	batch = _resolve_micro_batch(member, course)
 	if not batch:
-		return  # only courses assigned via the assign-course flow (batch + trainers)
+		return None  # only courses assigned via the assign-course flow (batch + trainers)
+	if frappe.db.exists(DOCTYPE, {"employee": employee, "course": course}):
+		return None  # one form per employee + course
+	return employee, batch
 
-	if frappe.db.exists(DOCTYPE, {"employee": employee, "course": doc.course}):
-		return  # one form per employee + course
 
+def _create_feedback_form(employee, course, batch, completed_on=None, notify=True):
+	"""Create the Draft form + pre-fill trainer rows from the batch instructors."""
 	form = frappe.new_doc(DOCTYPE)
 	form.employee = employee
-	form.course = doc.course
+	form.course = course
 	form.batch = batch
-	form.completed_on = today()
+	form.completed_on = completed_on or today()
 	form.status = "Draft"
 
 	instructors = frappe.get_all(
@@ -246,7 +244,70 @@ def create_feedback_form_on_completion(doc, method=None):
 		form.append("trainer_feedback", {"trainer": trainer})
 
 	form.insert(ignore_permissions=True)
-	notify_form_created(form)
+	if notify:
+		notify_form_created(form)
+	return form.name
+
+
+def create_feedback_form_on_completion(doc, method=None):
+	"""When an enrolled employee hits 100%, create exactly one feedback form for the
+	employee + course — but only for *assigned* employees (those with an assignment
+	micro-batch carrying trainers) and only once per employee + course."""
+	if cint(doc.progress) < 100:
+		return
+	eligible = _eligible_for_feedback(doc.member, doc.course)
+	if not eligible:
+		return
+	employee, batch = eligible
+	_create_feedback_form(employee, doc.course, batch, notify=True)
+
+
+@frappe.whitelist()
+def backfill_feedback_forms(send_notifications=0, dry_run=0):
+	"""One-off backfill: create Employee Feedback Forms for enrollments that already hit
+	100% before the auto-creation hook existed. Reuses the same eligibility rules
+	(assigned active employee + micro-batch, one per employee + course), so it is safe to
+	re-run (idempotent). Historical forms use the enrollment's completion date and, by
+	default, send **no** notifications (pass send_notifications=1 to override).
+
+	dry_run=1 reports how many forms *would* be created without writing anything.
+	Run as e.g. `bench --site <site> execute lms.lms.custom.employee_feedback.backfill_feedback_forms`."""
+	frappe.only_for(["System Manager", "LMS HR"])
+	notify = cint(send_notifications)
+	dry = cint(dry_run)
+
+	rows = frappe.get_all(
+		"LMS Enrollment",
+		filters={"progress": [">=", 100]},
+		fields=["name", "member", "course", "modified"],
+	)
+
+	created, eligible = 0, 0
+	for r in rows:
+		elig = _eligible_for_feedback(r.member, r.course)
+		if not elig:
+			continue
+		eligible += 1
+		if dry:
+			continue
+		employee, batch = elig
+		_create_feedback_form(
+			employee, r.course, batch, completed_on=getdate(r.modified), notify=notify
+		)
+		created += 1
+		if created % 50 == 0:
+			frappe.db.commit()  # checkpoint so a long backfill isn't one huge transaction
+
+	if not dry:
+		frappe.db.commit()
+
+	return {
+		"scanned_completed_enrollments": len(rows),
+		"eligible": eligible,
+		"created": 0 if dry else created,
+		"dry_run": bool(dry),
+		"notifications_sent": bool(notify) and not dry,
+	}
 
 
 # ---------------------------------------------------------------------------
