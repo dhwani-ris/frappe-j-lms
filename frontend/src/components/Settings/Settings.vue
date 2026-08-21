@@ -163,6 +163,22 @@ const tabsStructure = computed(() => {
 										},
 									],
 								},
+								{
+									fields: [
+										{
+											label: 'Notify Resource Updates by Email',
+											name: 'notify_resource_updates_by_email',
+											type: 'checkbox',
+											description:
+												'Sent when a document is uploaded or replaced in the Resources section.',
+										},
+										{
+											label: 'Notify Resource Updates In-app',
+											name: 'notify_resource_updates_in_app',
+											type: 'checkbox',
+										},
+									],
+								},
 							],
 						},
 						{

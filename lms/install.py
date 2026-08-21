@@ -13,8 +13,8 @@ def after_install():
 def after_sync():
 	create_lms_roles()
 	set_default_certificate_print_format()
-	give_lms_roles_to_admin()
 	setup_jamboree_roles()
+	give_lms_roles_to_admin()
 
 
 def before_uninstall():

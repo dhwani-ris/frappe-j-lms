@@ -11,6 +11,7 @@ from frappe.utils import cint
 class LMSQuizSubmission(Document):
 	def validate(self):
 		self.validate_if_max_attempts_exceeded()
+		self.validate_resource_viewed()
 		self.validate_marks()
 		self.set_percentage()
 
@@ -31,6 +32,25 @@ class LMSQuizSubmission(Document):
 					max_attempts
 				),
 				MaximumAttemptsExceededError,
+			)
+
+	def validate_resource_viewed(self):
+		resource = frappe.db.get_value("LMS Quiz", self.quiz, "resource")
+		if not resource:
+			return
+
+		viewed = frappe.db.exists(
+			"View Log",
+			{
+				"reference_doctype": "File",
+				"reference_name": resource,
+				"viewed_by": self.member,
+			},
+		)
+		if not viewed:
+			frappe.throw(
+				_("Please view or download the linked resource before attempting this quiz."),
+				ResourceNotViewedError,
 			)
 
 	def validate_marks(self):
@@ -72,4 +92,8 @@ class LMSQuizSubmission(Document):
 
 
 class MaximumAttemptsExceededError(frappe.DuplicateEntryError):
+	pass
+
+
+class ResourceNotViewedError(frappe.ValidationError):
 	pass
