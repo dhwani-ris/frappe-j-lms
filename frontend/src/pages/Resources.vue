@@ -587,13 +587,9 @@ const newFolderName = ref('')
 const createFolder = async ({ close } = {}) => {
 	if (!newFolderName.value.trim()) return
 	try {
-		await call('frappe.client.insert', {
-			doc: {
-				doctype: 'File',
-				is_folder: 1,
-				folder: currentFolder.value,
-				file_name: newFolderName.value.trim(),
-			},
+		await call('lms.lms.custom.resource_api.create_resource_folder', {
+			folder: currentFolder.value,
+			file_name: newFolderName.value.trim(),
 		})
 		toast.success(__('Folder created'))
 		newFolderName.value = ''
@@ -710,10 +706,8 @@ const openManageDialog = (item) => {
 
 const setFolderPermission = async (item, value) => {
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'File',
-			name: item.name,
-			fieldname: 'download_permission',
+		await call('lms.lms.custom.resource_api.set_resource_download_permission', {
+			file_name: item.name,
 			value,
 		})
 		item.download_permission = value
@@ -725,10 +719,8 @@ const setFolderPermission = async (item, value) => {
 
 const setPublished = async (item, value) => {
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'File',
-			name: item.name,
-			fieldname: 'published',
+		await call('lms.lms.custom.resource_api.set_resource_published', {
+			file_name: item.name,
 			value: value ? 1 : 0,
 		})
 		item.published = value
@@ -746,10 +738,8 @@ const setPublished = async (item, value) => {
 
 const setPublishOn = async (item, value) => {
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'File',
-			name: item.name,
-			fieldname: 'publish_on',
+		await call('lms.lms.custom.resource_api.set_resource_publish_on', {
+			file_name: item.name,
 			value,
 		})
 		item.publish_on = value
@@ -769,9 +759,8 @@ const confirmDelete = (item) => {
 
 const deleteConfirmed = async ({ close } = {}) => {
 	try {
-		await call('frappe.client.delete', {
-			doctype: 'File',
-			name: deleteTarget.value.name,
+		await call('lms.lms.custom.resource_api.delete_resource', {
+			file_name: deleteTarget.value.name,
 		})
 		toast.success(__('Deleted'))
 		showDeleteConfirm.value = false

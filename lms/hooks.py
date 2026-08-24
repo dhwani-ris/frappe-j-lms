@@ -83,6 +83,7 @@ permission_query_conditions = {
 
 has_permission = {
 	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
+	"File": "lms.lms.custom.resource_api.has_resource_permission",
 }
 
 # DocType Class
@@ -120,13 +121,10 @@ doc_events = {
 		"on_update": "lms.lms.custom.notifications.notify_on_course_completion",
 	},
 	"File": {
+		"validate": "lms.lms.custom.resource_api.validate_resource_upload",
 		"after_insert": "lms.lms.custom.resource_notify.notify_resource_change",
 		"on_update": "lms.lms.custom.resource_notify.notify_resource_change",
 	},
-}
-
-has_permission = {
-	"File": "lms.lms.custom.resource_api.has_resource_permission",
 }
 
 # Scheduled Tasks

@@ -1,7 +1,37 @@
 import frappe
+from frappe import _
 from frappe.utils import getdate, today
 
 RESOURCE_ROOT_FOLDER = "Home/LMS Resources"
+
+ALLOWED_RESOURCE_EXTENSIONS = {"PDF", "PPT", "PPTX"}
+MAX_RESOURCE_FILE_SIZE = 25 * 1024 * 1024  # 25 MB - matches Frappe's own default max upload size (get_max_file_size)
+
+
+def validate_resource_file(file_name, size):
+	"""Enforce the Resources feature's own file-type allow-list and size cap
+	on the actual uploaded content - independent of System Settings'
+	"Allowed File Extensions", which imposes no restriction at all unless an
+	admin has explicitly populated it (frappe/core/doctype/file/file.py
+	validate_file_extension() no-ops when that setting is empty, which it is
+	by default).
+
+	Shared by resource_api.replace_resource_file (checked before any byte is
+	written) and the File.validate doc_event hook (covers the initial
+	Upload File button too, which goes through Frappe's generic upload_file
+	endpoint, not through resource_api.py) - so neither path can be used to
+	plant an HTML/SVG file that stream_resource would later serve inline,
+	in-origin.
+	"""
+	extension = (file_name.rsplit(".", 1)[-1] if "." in file_name else "").upper()
+	if extension not in ALLOWED_RESOURCE_EXTENSIONS:
+		frappe.throw(_("Only PDF and PPT/PPTX files are allowed as Resources."))
+	if size > MAX_RESOURCE_FILE_SIZE:
+		frappe.throw(
+			_("File exceeds the maximum allowed size of {0} MB.").format(
+				MAX_RESOURCE_FILE_SIZE // (1024 * 1024)
+			)
+		)
 
 
 def is_under_resource_root(folder):

@@ -147,6 +147,31 @@ def _has_freshly_published_ancestor(folder, freshly_published_set):
 	return False
 
 
+def get_lms_notification_recipients():
+	"""Enabled users who actually have LMS/Resources access - not every
+	enabled account on the site, most of which (HR-only, finance-only,
+	integration accounts, etc.) have nothing to do with the LMS. Mirrors
+	the same "is this an LMS role" rule dashboard_api.py already uses to
+	build an employee's `lms_roles` list, so this stays consistent with
+	the rest of the app's definition rather than inventing a second one.
+	"""
+	relevant_roles = frappe.get_all(
+		"Has Role",
+		filters={"parenttype": "User", "role": ["like", "LMS%"]},
+		pluck="parent",
+	) + frappe.get_all(
+		"Has Role",
+		filters={"parenttype": "User", "role": ["in", ["Course Creator", "Moderator", "Batch Evaluator"]]},
+		pluck="parent",
+	)
+	if not relevant_roles:
+		return []
+
+	return frappe.get_all(
+		"User", filters={"name": ["in", set(relevant_roles)], "enabled": 1}, pluck="name"
+	)
+
+
 def _dispatch(action, folder_doc):
 	settings = frappe.db.get_singles_dict("LMS Settings")
 	send_email = cint(settings.get("notify_resource_updates_by_email"))
@@ -154,7 +179,7 @@ def _dispatch(action, folder_doc):
 	if not send_email and not send_in_app:
 		return
 
-	recipients = frappe.get_all("User", {"enabled": 1}, pluck="name")
+	recipients = get_lms_notification_recipients()
 	if not recipients:
 		return
 

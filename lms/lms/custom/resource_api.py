@@ -10,6 +10,7 @@ from lms.lms.custom.resource_constants import (
 	RESOURCE_ROOT_FOLDER,
 	is_effectively_published,
 	is_under_resource_root,
+	validate_resource_file,
 )
 from lms.lms.custom.resource_notify import notify_resource_change
 
@@ -287,6 +288,7 @@ def replace_resource_file(file_name):
 
 	uploaded_file = frappe.request.files["file"]
 	content = uploaded_file.stream.read()
+	validate_resource_file(uploaded_file.filename, len(content))
 
 	doc = frappe.get_doc("File", file_name)
 	doc.file_name = uploaded_file.filename
@@ -296,6 +298,94 @@ def replace_resource_file(file_name):
 	notify_resource_change(doc, method="replace")
 
 	return doc.name
+
+
+@frappe.whitelist()
+def create_resource_folder(folder, file_name):
+	"""Create a subfolder under the Resources tree.
+
+	Must not be exposed as a raw frappe.client.insert call from the
+	frontend: this site's File doctype has a pre-existing Custom DocPerm
+	granting the "All" role write access (see is_resource_manager's
+	docstring), so the generic RPC's own permission check would let any
+	logged-in user create folders anywhere, not just Resource Managers
+	under Resources.
+	"""
+	_check_resource_admin()
+
+	folder = folder or RESOURCE_ROOT_FOLDER
+	if not is_under_resource_root(folder):
+		frappe.throw(_("Invalid folder."), frappe.PermissionError)
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"is_folder": 1,
+			"folder": folder,
+			"file_name": file_name,
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	return doc.name
+
+
+def _get_scoped_resource(file_name):
+	"""Load a File doc, but only if it's actually under the Resources
+	tree - so a Resource Manager's admin actions can't be pointed at an
+	arbitrary File record elsewhere on the site."""
+	doc = frappe.get_doc("File", file_name)
+	folder = doc.name if doc.is_folder else doc.folder
+	if not is_under_resource_root(folder):
+		frappe.throw(_("Not a Resource."), frappe.PermissionError)
+	return doc
+
+
+@frappe.whitelist()
+def set_resource_download_permission(file_name, value):
+	_check_resource_admin()
+	doc = _get_scoped_resource(file_name)
+	doc.download_permission = value
+	doc.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def set_resource_published(file_name, value):
+	_check_resource_admin()
+	doc = _get_scoped_resource(file_name)
+	doc.published = cint(value)
+	doc.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def set_resource_publish_on(file_name, value):
+	_check_resource_admin()
+	doc = _get_scoped_resource(file_name)
+	doc.publish_on = value or None
+	doc.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def delete_resource(file_name):
+	_check_resource_admin()
+	_get_scoped_resource(file_name)
+	frappe.delete_doc("File", file_name, ignore_permissions=True)
+
+
+def validate_resource_upload(doc, method=None):
+	"""File.validate doc_event hook (registered in hooks.py) - enforces the
+	Resources feature's file-type allow-list and size cap on every File
+	saved under the Resources tree, regardless of which endpoint
+	created/updated it. Necessary because the initial Upload File button
+	(Resources.vue's FileUploader) goes through Frappe's own generic
+	upload_file endpoint, not through resource_api.py, so
+	replace_resource_file's own check alone wouldn't cover a first-time
+	upload of a disallowed file.
+	"""
+	if doc.is_folder:
+		return
+	if not is_under_resource_root(doc.folder):
+		return
+	validate_resource_file(doc.file_name, doc.file_size or 0)
 
 
 def get_effective_download_permission(file_name):
