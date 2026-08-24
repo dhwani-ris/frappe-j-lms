@@ -14,7 +14,9 @@
 				<!-- Summary Cards -->
 				<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
 					<div class="border rounded-lg p-4 bg-surface-white">
-						<div class="text-xs text-ink-gray-5">{{ __('Total Attempts') }}</div>
+						<div class="text-xs text-ink-gray-5">
+							{{ __('Total Attempts') }}
+						</div>
 						<div class="text-2xl font-bold text-ink-gray-9 mt-1">
 							{{ employee.quiz_scores?.length || 0 }}
 						</div>
@@ -41,16 +43,22 @@
 
 				<!-- Quiz Attempts Table -->
 				<div class="border rounded-lg overflow-hidden">
-					<div class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9">
+					<div
+						class="px-4 py-3 bg-surface-gray-1 border-b font-semibold text-ink-gray-9"
+					>
 						{{ __('Quiz Attempt History') }}
 					</div>
-					<div v-if="!employee.quiz_scores?.length" class="px-4 py-10 text-center text-ink-gray-5">
+					<div
+						v-if="!employee.quiz_scores?.length"
+						class="px-4 py-10 text-center text-ink-gray-5"
+					>
 						{{ __('No quiz attempts yet') }}
 					</div>
 					<table v-else class="w-full">
 						<thead>
 							<tr class="border-b text-left text-sm text-ink-gray-5">
 								<th class="px-4 py-3">{{ __('Quiz') }}</th>
+								<th class="px-4 py-3">{{ __('Course / Folder') }}</th>
 								<th class="px-4 py-3 text-center">{{ __('Score') }}</th>
 								<th class="px-4 py-3 text-center">{{ __('Percentage') }}</th>
 								<th class="px-4 py-3 text-center">{{ __('Status') }}</th>
@@ -66,6 +74,9 @@
 								<td class="px-4 py-3 text-ink-gray-9">
 									{{ quiz.quiz_title || quiz.quiz }}
 								</td>
+								<td class="px-4 py-3 text-ink-gray-7">
+									{{ quiz.context_label || '-' }}
+								</td>
 								<td class="px-4 py-3 text-center text-ink-gray-7">
 									{{ quiz.score || 0 }}
 								</td>
@@ -74,7 +85,9 @@
 										class="font-semibold"
 										:class="{
 											'text-green-600': (quiz.percentage || 0) >= 70,
-											'text-orange-600': (quiz.percentage || 0) >= 40 && (quiz.percentage || 0) < 70,
+											'text-orange-600':
+												(quiz.percentage || 0) >= 40 &&
+												(quiz.percentage || 0) < 70,
 											'text-red-600': (quiz.percentage || 0) < 40,
 										}"
 									>
@@ -83,7 +96,9 @@
 								</td>
 								<td class="px-4 py-3 text-center">
 									<Badge
-										:label="(quiz.percentage || 0) >= 70 ? __('Pass') : __('Fail')"
+										:label="
+											(quiz.percentage || 0) >= 70 ? __('Pass') : __('Fail')
+										"
 										:theme="(quiz.percentage || 0) >= 70 ? 'green' : 'red'"
 										variant="subtle"
 										size="sm"
@@ -112,9 +127,7 @@
 							<div class="text-lg font-semibold text-ink-gray-9">
 								{{ range.count }}
 							</div>
-							<div class="text-xs text-ink-gray-5">
-								{{ range.percentage }}%
-							</div>
+							<div class="text-xs text-ink-gray-5">{{ range.percentage }}%</div>
 						</div>
 					</div>
 				</div>
@@ -146,12 +159,14 @@ const formatDate = (date) => {
 
 const highestScore = computed(() => {
 	if (!props.employee?.quiz_scores?.length) return 0
-	return Math.max(...props.employee.quiz_scores.map(q => q.percentage || 0))
+	return Math.max(...props.employee.quiz_scores.map((q) => q.percentage || 0))
 })
 
 const passRate = computed(() => {
 	if (!props.employee?.quiz_scores?.length) return 0
-	const passed = props.employee.quiz_scores.filter(q => (q.percentage || 0) >= 70).length
+	const passed = props.employee.quiz_scores.filter(
+		(q) => (q.percentage || 0) >= 70
+	).length
 	return Math.round((passed / props.employee.quiz_scores.length) * 100)
 })
 
@@ -167,13 +182,13 @@ const scoreRanges = computed(() => {
 		{ label: '81-100%', min: 81, max: 100, count: 0 },
 	]
 
-	props.employee.quiz_scores.forEach(quiz => {
+	props.employee.quiz_scores.forEach((quiz) => {
 		const percentage = quiz.percentage || 0
-		const range = ranges.find(r => percentage >= r.min && percentage <= r.max)
+		const range = ranges.find((r) => percentage >= r.min && percentage <= r.max)
 		if (range) range.count++
 	})
 
-	return ranges.map(r => ({
+	return ranges.map((r) => ({
 		...r,
 		percentage: total > 0 ? Math.round((r.count / total) * 100) : 0,
 	}))

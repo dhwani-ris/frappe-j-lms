@@ -11,19 +11,13 @@
 				]"
 			/>
 			<div class="flex gap-2">
-				<Button
-					variant="subtle"
-					@click="router.push({ name: 'Quizzes' })"
-				>
+				<Button variant="subtle" @click="router.push({ name: 'Quizzes' })">
 					<template #prefix>
 						<FileText class="size-4 stroke-1.5" />
 					</template>
 					{{ __('Quizzes') }}
 				</Button>
-				<Button
-					variant="subtle"
-					@click="router.push({ name: 'Assignments' })"
-				>
+				<Button variant="subtle" @click="router.push({ name: 'Assignments' })">
 					<template #prefix>
 						<ClipboardList class="size-4 stroke-1.5" />
 					</template>
@@ -34,7 +28,10 @@
 
 		<div class="p-5">
 			<!-- Search and Filters -->
-			<div v-if="dashboard.data?.batches?.length" class="mb-6 flex flex-wrap gap-3">
+			<div
+				v-if="dashboard.data?.batches?.length"
+				class="mb-6 flex flex-wrap gap-3"
+			>
 				<div class="flex-1 min-w-[250px]">
 					<Input
 						v-model="searchQuery"
@@ -60,11 +57,7 @@
 					:placeholder="__('All Progress Levels')"
 					class="w-48"
 				/>
-				<Button
-					v-if="hasActiveFilters"
-					variant="subtle"
-					@click="clearFilters"
-				>
+				<Button v-if="hasActiveFilters" variant="subtle" @click="clearFilters">
 					<template #prefix>
 						<X class="size-4 stroke-1.5" />
 					</template>
@@ -116,9 +109,7 @@
 				v-else-if="!dashboard.data?.batches?.length"
 				class="text-center py-20"
 			>
-				<GraduationCap
-					class="size-12 mx-auto text-ink-gray-4 stroke-1"
-				/>
+				<GraduationCap class="size-12 mx-auto text-ink-gray-4 stroke-1" />
 				<p class="mt-3 text-ink-gray-5">
 					{{
 						__(
@@ -135,7 +126,12 @@
 				>
 					<span>{{ __('Students Progress') }}</span>
 					<span class="text-sm font-normal text-ink-gray-5">
-						{{ __('Showing {0} of {1}', [paginatedStudents.length, filteredStudents.length]) }}
+						{{
+							__('Showing {0} of {1}', [
+								paginatedStudents.length,
+								filteredStudents.length,
+							])
+						}}
 					</span>
 				</div>
 				<table class="w-full">
@@ -148,22 +144,33 @@
 							<th class="px-4 py-3">{{ __('Avg Progress') }}</th>
 							<th class="px-4 py-3 text-center">{{ __('Assessments') }}</th>
 							<th class="px-4 py-3 text-center">{{ __('Status') }}</th>
-							<th class="px-4 py-3 text-center" v-if="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr">{{ __('Actions') }}</th>
+							<th
+								class="px-4 py-3 text-center"
+								v-if="
+									user.data?.is_system_manager ||
+									user.data?.is_master_trainer ||
+									user.data?.is_lms_hr
+								"
+							>
+								{{ __('Actions') }}
+							</th>
 						</tr>
 					</thead>
 					<tbody>
 						<template
 							v-for="student in paginatedStudents"
-							:key="student.member"
+							:key="rowKey(student)"
 						>
 							<tr
 								class="border-b hover:bg-surface-gray-1 cursor-pointer transition-colors"
-								@click="toggleStudent(student.member)"
+								@click="toggleStudent(rowKey(student))"
 							>
 								<td class="px-4 py-3">
 									<ChevronRight
 										class="size-4 text-ink-gray-4 transition-transform"
-										:class="{ 'rotate-90': expandedStudent === student.member }"
+										:class="{
+											'rotate-90': expandedStudent === rowKey(student),
+										}"
 									/>
 								</td>
 								<td class="px-4 py-3">
@@ -177,7 +184,8 @@
 											size="md"
 										/>
 										<div>
-											<div class="font-medium text-ink-gray-9 cursor-pointer hover:text-blue-600"
+											<div
+												class="font-medium text-ink-gray-9 cursor-pointer hover:text-blue-600"
 												@click.stop="openStudentQuizAnalytics(student)"
 											>
 												{{ student.member_name }}
@@ -192,10 +200,13 @@
 									{{ student.batch_title || '-' }}
 								</td>
 								<td class="px-4 py-3 text-ink-gray-7 text-center">
-									{{ student.total_courses }}
+									{{ student.total_courses ?? '-' }}
 								</td>
 								<td class="px-4 py-3">
-									<div class="flex items-center space-x-2">
+									<div
+										v-if="student.avg_progress !== null"
+										class="flex items-center space-x-2"
+									>
 										<div class="w-24 bg-surface-gray-2 rounded-full h-2">
 											<div
 												class="bg-blue-500 h-2 rounded-full transition-all"
@@ -206,6 +217,7 @@
 											{{ student.avg_progress }}%
 										</span>
 									</div>
+									<span v-else class="text-sm text-ink-gray-5">-</span>
 								</td>
 								<td class="px-4 py-3 text-center">
 									<div class="flex flex-col gap-1">
@@ -213,14 +225,27 @@
 											class="text-xs cursor-pointer hover:text-blue-600 hover:underline"
 											@click.stop="openStudentQuizAnalytics(student)"
 										>
-											<span class="font-semibold">{{ student.quiz_count || 0 }}</span> {{ __('Quizzes') }}
-											<span class="text-ink-gray-5">({{ student.avg_quiz_score || 0 }}%)</span>
+											<span class="font-semibold">{{
+												student.quiz_count || 0
+											}}</span>
+											{{ __('Quizzes') }}
+											<span class="text-ink-gray-5"
+												>({{ student.avg_quiz_score || 0 }}%)</span
+											>
 										</div>
 										<div
 											class="text-xs cursor-pointer hover:text-blue-600 hover:underline"
-											@click.stop="router.push({ name: 'AssignmentSubmissionList', query: { member: student.member } })"
+											@click.stop="
+												router.push({
+													name: 'AssignmentSubmissionList',
+													query: { member: student.member },
+												})
+											"
 										>
-											<span class="font-semibold">{{ student.assignment_count || 0 }}</span> {{ __('Assignments') }}
+											<span class="font-semibold">{{
+												student.assignment_count || 0
+											}}</span>
+											{{ __('Assignments') }}
 										</div>
 									</div>
 								</td>
@@ -231,8 +256,16 @@
 										:theme="getStatusTheme(student.status)"
 									/>
 								</td>
-								<td class="px-4 py-3 text-center" v-if="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr">
+								<td
+									class="px-4 py-3 text-center"
+									v-if="
+										user.data?.is_system_manager ||
+										user.data?.is_master_trainer ||
+										user.data?.is_lms_hr
+									"
+								>
 									<Button
+										v-if="!student.is_resource_folder_row"
 										variant="subtle"
 										theme="blue"
 										size="sm"
@@ -243,8 +276,22 @@
 								</td>
 							</tr>
 							<!-- Expanded: Course Details -->
-							<tr v-if="expandedStudent === student.member && student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
+							<tr
+								v-if="
+									expandedStudent === rowKey(student) &&
+									student.enrollments?.length
+								"
+							>
+								<td
+									:colspan="
+										user.data?.is_system_manager ||
+										user.data?.is_master_trainer ||
+										user.data?.is_lms_hr
+											? 8
+											: 7
+									"
+									class="p-0"
+								>
 									<div class="bg-surface-gray-1">
 										<div
 											v-for="enrollment in student.enrollments"
@@ -256,10 +303,14 @@
 											</div>
 											<div class="flex items-center space-x-3">
 												<div class="w-24">
-													<div class="w-full bg-surface-gray-3 rounded-full h-1.5">
+													<div
+														class="w-full bg-surface-gray-3 rounded-full h-1.5"
+													>
 														<div
 															class="bg-blue-500 h-1.5 rounded-full transition-all"
-															:style="{ width: (enrollment.progress || 0) + '%' }"
+															:style="{
+																width: (enrollment.progress || 0) + '%',
+															}"
 														></div>
 													</div>
 												</div>
@@ -277,9 +328,87 @@
 									</div>
 								</td>
 							</tr>
-							<tr v-if="expandedStudent === student.member && !student.enrollments?.length">
-								<td :colspan="user.data?.is_system_manager || user.data?.is_master_trainer || user.data?.is_lms_hr ? 8 : 7" class="p-0">
-									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
+							<!-- Expanded: Resource Folder row's own quiz attempts. Unlike
+								 a course row (one row per real batch enrollment), a
+								 resource-folder row IS the folder - "Test Employee -
+								 Sports" - so there's no header to repeat here, just each
+								 submission on that folder's resource(s), one row per
+								 attempt (multiple attempts on the same resource each show
+								 separately). Always "Completed": a submission existing
+								 means that attempt is done - there's no partial-progress
+								 concept for a single quiz the way there is for an ongoing
+								 course. -->
+							<tr
+								v-if="
+									expandedStudent === rowKey(student) &&
+									student.is_resource_folder_row &&
+									student.resource_quizzes?.length
+								"
+							>
+								<td
+									:colspan="
+										user.data?.is_system_manager ||
+										user.data?.is_master_trainer ||
+										user.data?.is_lms_hr
+											? 8
+											: 7
+									"
+									class="p-0"
+								>
+									<div class="bg-surface-gray-1">
+										<div
+											v-for="rq in student.resource_quizzes"
+											:key="rq.name"
+											class="px-4 py-2.5 pl-16 flex items-center justify-between border-b last:border-b-0"
+										>
+											<div class="text-sm text-ink-gray-7">
+												{{ rq.document_name || rq.resource }}
+											</div>
+											<div class="flex items-center space-x-3">
+												<div class="w-24">
+													<div
+														class="w-full bg-surface-gray-3 rounded-full h-1.5"
+													>
+														<div
+															class="bg-blue-500 h-1.5 rounded-full transition-all"
+															:style="{ width: (rq.percentage || 0) + '%' }"
+														></div>
+													</div>
+												</div>
+												<span class="text-xs text-ink-gray-5 w-10 text-right">
+													{{ rq.percentage || 0 }}%
+												</span>
+												<Badge
+													:label="__('Completed')"
+													variant="subtle"
+													theme="green"
+													size="sm"
+												/>
+											</div>
+										</div>
+									</div>
+								</td>
+							</tr>
+							<tr
+								v-if="
+									expandedStudent === rowKey(student) &&
+									!student.enrollments?.length &&
+									!student.is_resource_folder_row
+								"
+							>
+								<td
+									:colspan="
+										user.data?.is_system_manager ||
+										user.data?.is_master_trainer ||
+										user.data?.is_lms_hr
+											? 8
+											: 7
+									"
+									class="p-0"
+								>
+									<div
+										class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b"
+									>
 										{{ __('No course enrollments') }}
 									</div>
 								</td>
@@ -288,7 +417,10 @@
 					</tbody>
 				</table>
 				<!-- Pagination -->
-				<div v-if="filteredStudents.length > perPage" class="px-4 py-3 border-t bg-surface-gray-1 flex items-center justify-between">
+				<div
+					v-if="filteredStudents.length > perPage"
+					class="px-4 py-3 border-t bg-surface-gray-1 flex items-center justify-between"
+				>
 					<div class="flex items-center space-x-2">
 						<span class="text-sm text-ink-gray-5">{{ __('Show') }}</span>
 						<FormControl
@@ -337,10 +469,16 @@
 					</div>
 
 					<!-- Chapter Selection -->
-					<div v-if="lockedChapters.loading" class="text-sm text-gray-500 py-4 text-center">
+					<div
+						v-if="lockedChapters.loading"
+						class="text-sm text-gray-500 py-4 text-center"
+					>
 						{{ __('Loading...') }}
 					</div>
-					<div v-else-if="!lockedChapters.data?.length" class="text-sm text-gray-500 py-4 text-center">
+					<div
+						v-else-if="!lockedChapters.data?.length"
+						class="text-sm text-gray-500 py-4 text-center"
+					>
 						{{ __('No locked chapters available to unlock') }}
 					</div>
 					<FormControl
@@ -371,16 +509,31 @@
 		</Dialog>
 
 		<!-- Quiz Analytics Modal -->
-		<QuizAnalyticsModal
-			v-model="showQuizModal"
-			:employee="selectedStudent"
-		/>
+		<QuizAnalyticsModal v-model="showQuizModal" :employee="selectedStudent" />
 	</div>
 </template>
 
 <script setup>
-import { Breadcrumbs, Button, createResource, LoadingIndicator, Badge, Input, FormControl, Dialog, toast } from 'frappe-ui'
-import { GraduationCap, ChevronRight, Search, FileText, ClipboardList, BarChart3, X } from 'lucide-vue-next'
+import {
+	Breadcrumbs,
+	Button,
+	createResource,
+	LoadingIndicator,
+	Badge,
+	Input,
+	FormControl,
+	Dialog,
+	toast,
+} from 'frappe-ui'
+import {
+	GraduationCap,
+	ChevronRight,
+	Search,
+	FileText,
+	ClipboardList,
+	BarChart3,
+	X,
+} from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import dayjs from 'dayjs'
@@ -416,9 +569,18 @@ const progressOptions = [
 	{ label: __('75-100%'), value: '75-100' },
 ]
 
-const toggleStudent = (member) => {
-	expandedStudent.value = expandedStudent.value === member ? null : member
+const toggleStudent = (key) => {
+	expandedStudent.value = expandedStudent.value === key ? null : key
 }
+
+// A unique key per row. Real course/batch rows are already unique per
+// (member, batch_name); resource-folder rows share the same `member` as
+// whichever course row(s) that employee also has, so `batch_name` alone
+// isn't enough - fall back to `folder_name` to tell those apart too.
+// Without this, expanding one of an employee's rows would expand every
+// row sharing their member id at once.
+const rowKey = (student) =>
+	`${student.member}::${student.batch_name || student.folder_name || ''}`
 
 // Reset to page 1 when filters change
 watch([searchQuery, batchFilter, progressFilter], () => {
@@ -460,27 +622,31 @@ const batchOptions = computed(() => {
 	if (!dashboard.data?.batches) return []
 	return [
 		{ label: __('All Batches'), value: '' },
-		...dashboard.data.batches.map(b => ({
+		...dashboard.data.batches.map((b) => ({
 			label: b.title,
-			value: b.name  // Use batch ID instead of title
-		}))
+			value: b.name, // Use batch ID instead of title
+		})),
 	]
 })
 
-// Computed: All students across all batches
+// Computed: All students across all batches, plus one row per
+// (employee, resource folder) - not tied to any batch, so listed
+// separately by the backend and appended here rather than nested in
+// `batch.students`.
 const allStudents = computed(() => {
 	if (!dashboard.data?.batches) return []
 
 	const students = []
-	dashboard.data.batches.forEach(batch => {
-		batch.students.forEach(student => {
+	dashboard.data.batches.forEach((batch) => {
+		batch.students.forEach((student) => {
 			students.push({
 				...student,
 				batch_title: batch.title,
-				batch_name: batch.name
+				batch_name: batch.name,
 			})
 		})
 	})
+	students.push(...(dashboard.data.resource_folder_rows || []))
 	return students
 })
 
@@ -491,24 +657,27 @@ const filteredStudents = computed(() => {
 	// Search filter
 	if (searchQuery.value) {
 		const query = searchQuery.value.toLowerCase()
-		filtered = filtered.filter(s =>
-			s.member_name?.toLowerCase().includes(query) ||
-			s.member?.toLowerCase().includes(query) ||
-			s.batch_title?.toLowerCase().includes(query)
+		filtered = filtered.filter(
+			(s) =>
+				s.member_name?.toLowerCase().includes(query) ||
+				s.member?.toLowerCase().includes(query) ||
+				s.batch_title?.toLowerCase().includes(query)
 		)
 	}
 
 	// Batch filter
 	if (batchFilter.value) {
-		filtered = filtered.filter(s => s.batch_title === batchFilter.value)
+		filtered = filtered.filter((s) => s.batch_title === batchFilter.value)
 	}
 
-	// Progress filter
+	// Progress filter - resource-folder rows have no progress concept
+	// (avg_progress is null, not 0), so they're excluded from every
+	// bucket rather than defaulting into "0-25%" like a real 0 would.
 	if (progressFilter.value) {
 		const [min, max] = progressFilter.value.split('-').map(Number)
-		filtered = filtered.filter(s => {
-			const progress = s.avg_progress || 0
-			return progress >= min && progress <= max
+		filtered = filtered.filter((s) => {
+			if (s.avg_progress === null) return false
+			return s.avg_progress >= min && s.avg_progress <= max
 		})
 	}
 
@@ -540,10 +709,16 @@ const getStatusTheme = (status) => {
 const getAssessmentSummary = (student) => {
 	const parts = []
 	if (student.quiz_count) {
-		parts.push(`${student.quiz_count} quiz${student.quiz_count > 1 ? 'zes' : ''}`)
+		parts.push(
+			`${student.quiz_count} quiz${student.quiz_count > 1 ? 'zes' : ''}`
+		)
 	}
 	if (student.assignment_count) {
-		parts.push(`${student.assignment_count} assignment${student.assignment_count > 1 ? 's' : ''}`)
+		parts.push(
+			`${student.assignment_count} assignment${
+				student.assignment_count > 1 ? 's' : ''
+			}`
+		)
 	}
 	return parts.length ? parts.join(', ') : __('No assessments')
 }
@@ -565,9 +740,9 @@ const doUnlockChapter = createResource({
 
 const chapterOptions = computed(() => {
 	if (!lockedChapters.data) return []
-	return lockedChapters.data.map(chapter => ({
+	return lockedChapters.data.map((chapter) => ({
 		label: chapter.display,
-		value: JSON.stringify({ course: chapter.course, chapter: chapter.chapter })
+		value: JSON.stringify({ course: chapter.course, chapter: chapter.chapter }),
 	}))
 })
 
