@@ -84,6 +84,13 @@
 						:required="true"
 						:disabled="readOnlyMode"
 					/>
+					<Link
+						doctype="File"
+						v-model="quizDetails.doc.resource"
+						:label="__('Attach to Resource')"
+						:filters="{ folder: ['like', 'Home/LMS Resources%'], is_folder: 0 }"
+						:disabled="readOnlyMode"
+					/>
 				</div>
 			</div>
 		</div>
@@ -243,6 +250,7 @@ import { ClipboardList, ListChecks, Plus, Trash2 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { escapeHTML } from '@/utils'
 import Question from '@/components/Modals/Question.vue'
+import Link from '@/components/Controls/Link.vue'
 
 const { brand } = sessionStore()
 const showQuestionModal = ref(false)
@@ -258,8 +266,10 @@ const readOnlyMode = computed(() => {
 
 	// Check if user has privileged roles
 	const roles = user.data?.roles || []
-	const hasPrivilegedRole = roles.some(role =>
-		['LMS Master Trainer', 'LMS HR', 'System Manager', 'HR Manager'].includes(role)
+	const hasPrivilegedRole = roles.some((role) =>
+		['LMS Master Trainer', 'LMS HR', 'System Manager', 'HR Manager'].includes(
+			role
+		)
 	)
 
 	// Read-only if: user is LMS Trainer AND doesn't have privileged roles
@@ -280,7 +290,12 @@ const questions = computed(() => {
 })
 
 onMounted(() => {
-	if (!user.data?.is_moderator && !user.data?.is_instructor && !user.data?.is_trainer && !user.data?.is_master_trainer) {
+	if (
+		!user.data?.is_moderator &&
+		!user.data?.is_instructor &&
+		!user.data?.is_trainer &&
+		!user.data?.is_master_trainer
+	) {
 		router.push({ name: 'Courses' })
 	}
 	quizDetails.reload()

@@ -616,6 +616,21 @@ const getSidebarItems = () => {
 				},
 			],
 		},
+		{
+			label: 'Resources',
+			hideLabel: false,
+			items: [
+				{
+					label: 'Resources',
+					icon: 'FolderOpen',
+					to: 'Resources',
+					activeFor: ['Resources'],
+					condition: () => {
+						return true
+					},
+				},
+			],
+		},
 	]
 }
 
