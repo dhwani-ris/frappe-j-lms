@@ -250,7 +250,45 @@
 									</div>
 								</td>
 							</tr>
-							<tr v-if="expandedReport === report.name && !report.enrollments?.length">
+							<!-- Expanded: Resource-linked quiz activity, grouped by top-level
+								 Resource folder (Resources are a company-wide library, not
+								 course content, so this is shown separately from course
+								 enrollments above, same distinction Employee Dashboard makes). -->
+							<tr v-if="expandedReport === report.name && report.resource_folders?.length">
+								<td colspan="8" class="p-0">
+									<div class="bg-surface-gray-1">
+										<div
+											v-for="folder in report.resource_folders"
+											:key="folder.folder_name"
+											class="px-4 py-2.5 pl-16 flex items-center justify-between border-b last:border-b-0"
+										>
+											<div class="text-sm text-ink-gray-7">
+												{{ folder.folder_name }}
+											</div>
+											<div class="flex items-center space-x-3">
+												<span class="text-xs text-ink-gray-5">
+													{{
+														__('{0} Quizzes ({1}%)', [folder.quiz_count, folder.avg_score])
+													}}
+												</span>
+												<Badge
+													:label="__('Completed')"
+													variant="subtle"
+													theme="green"
+													size="sm"
+												/>
+											</div>
+										</div>
+									</div>
+								</td>
+							</tr>
+							<tr
+								v-if="
+									expandedReport === report.name &&
+									!report.enrollments?.length &&
+									!report.resource_folders?.length
+								"
+							>
 								<td colspan="6" class="p-0">
 									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
 										{{ __('No course enrollments') }}
