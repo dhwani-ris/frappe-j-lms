@@ -64,6 +64,7 @@ before_uninstall = "lms.install.before_uninstall"
 setup_wizard_requires = "assets/lms/js/setup_wizard.js"
 after_migrate = [
 	"lms.sqlite.build_index_in_background",
+	"lms.install.setup_feedback_event_custom_fields",
 ]
 
 # Desk Notifications
@@ -79,10 +80,12 @@ after_migrate = [
 permission_query_conditions = {
 	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.get_manager_permission_query_condition",
 	"DocType": "lms.app_permissions.filter_importable_doctypes",
+	"Employee Feedback Form": "lms.lms.custom.employee_feedback.get_permission_query",
 }
 
 has_permission = {
 	"LMS Batch Enrollment": "lms.lms.custom.batch_enrollment_approval.has_permission",
+	"Employee Feedback Form": "lms.lms.custom.employee_feedback.has_permission",
 	"File": "lms.lms.custom.resource_api.has_resource_permission",
 }
 
@@ -112,13 +115,22 @@ doc_events = {
 	"User": {
 		"validate": "lms.lms.user.validate_username_duplicates",
 		"after_insert": "lms.lms.user.after_insert",
-		"on_update": "lms.lms.user.on_update",
+		"on_update": [
+			"lms.lms.user.on_update",
+			"lms.lms.custom.notifications.notify_on_user_disabled",
+		],
+	},
+	"Employee": {
+		"on_update": "lms.lms.custom.notifications.notify_on_employee_exit",
 	},
 	"LMS Quiz Submission": {
 		"after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
 	},
 	"LMS Enrollment": {
-		"on_update": "lms.lms.custom.notifications.notify_on_course_completion",
+		"on_update": [
+			"lms.lms.custom.notifications.notify_on_course_completion",
+			"lms.lms.custom.employee_feedback.create_feedback_form_on_completion",
+		],
 	},
 	"File": {
 		"validate": "lms.lms.custom.resource_api.validate_resource_upload",
@@ -146,6 +158,7 @@ scheduler_events = {
 		"lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
 		"lms.lms.doctype.lms_course.lms_course.send_notification_for_published_courses",
 		"lms.lms.custom.notifications.check_student_progress_alerts",
+		"lms.lms.custom.notifications.check_course_deadline_reminders",
 		"lms.lms.custom.resource_notify.send_scheduled_publish_notifications",
 	],
 }

@@ -605,6 +605,15 @@ const getSidebarItems = () => {
 						return isJamboreeHR()
 					},
 				},
+				{
+					label: 'Employee Feedback',
+					icon: 'ClipboardList',
+					to: 'EmployeeFeedback',
+					activeFor: ['EmployeeFeedback', 'EmployeeFeedbackForm'],
+					condition: () => {
+						return canSeeEmployeeFeedback()
+					},
+				},
 			],
 		},
 		{
@@ -669,6 +678,19 @@ const isJamboreeManager = () => {
 const isJamboreeHR = () => {
 	const { userResource } = usersStore()
 	return userResource?.data?.is_lms_hr
+}
+
+const canSeeEmployeeFeedback = () => {
+	// Admins (System Manager / Administrator) and reviewers (trainer / manager /
+	// master trainer / HR / moderator) always see the link; an evaluatee sees it
+	// only when they actually have a feedback form.
+	const { userResource } = usersStore()
+	return (
+		userResource?.data?.is_system_manager ||
+		isJamboreeTrainer() ||
+		isJamboreeManager() ||
+		userResource?.data?.has_employee_feedback
+	)
 }
 
 const checkIfCanAddProgram = () => {

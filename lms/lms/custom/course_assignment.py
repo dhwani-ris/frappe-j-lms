@@ -1,4 +1,7 @@
+import json
+
 import frappe
+from frappe import _
 from frappe.utils import today, add_months
 
 
@@ -75,6 +78,35 @@ def assign_course_to_student(student_email, course, assigned_by=None, trainers=N
 		"enrollment": enrollment_name,
 		"message": f"Course '{course_title}' assigned to {student_name}",
 	}
+
+
+@frappe.whitelist()
+def update_assignment_trainers(batch, trainers):
+	"""Replace the trainers (Course Instructor rows) on an assignment's micro-batch, and
+	sync the change into the employee's feedback form (see
+	employee_feedback.sync_assignment_trainers_to_feedback)."""
+	frappe.only_for(["LMS Master Trainer", "LMS HR", "Moderator"])
+
+	if isinstance(trainers, str):
+		trainers = json.loads(trainers) if trainers else []
+	trainers = list(dict.fromkeys(trainers or []))  # de-dup, keep order
+
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(_("Batch {0} does not exist").format(batch))
+	for trainer_email in trainers:
+		if not frappe.db.exists("User", trainer_email):
+			frappe.throw(_("User {0} does not exist").format(trainer_email))
+
+	batch_doc = frappe.get_doc("LMS Batch", batch)
+	batch_doc.set("instructors", [{"instructor": t} for t in trainers])
+	# ignore_permissions: role verified via frappe.only_for() above; bypass per-doc write
+	# check (the micro-batch is system-managed, not user-owned).
+	batch_doc.save(ignore_permissions=True)
+
+	from lms.lms.custom.employee_feedback import sync_assignment_trainers_to_feedback
+
+	result = sync_assignment_trainers_to_feedback(batch, trainers) or {}
+	return {"message": "Trainers updated successfully", **result}
 
 
 @frappe.whitelist()

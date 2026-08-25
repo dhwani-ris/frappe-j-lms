@@ -52,6 +52,9 @@
 		</div>
 
 		<div v-else-if="employeeData.data" class="p-5">
+			<!-- Employee feedback forms for this employee -->
+			<EmployeeFeedbackList :heading="__('Feedback Forms')" :employee="employeeId" />
+
 			<!-- Deactivated Banner -->
 			<div
 				v-if="employeeData.data.status !== 'Active'"
@@ -627,6 +630,7 @@ import {
 } from 'frappe-ui'
 import { Pencil } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
+import EmployeeFeedbackList from '@/components/EmployeeFeedbackList.vue'
 import dayjs from 'dayjs'
 import { ref, computed, reactive } from 'vue'
 import { usersStore } from '@/stores/user.js'

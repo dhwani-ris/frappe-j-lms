@@ -14,7 +14,43 @@ def after_sync():
 	create_lms_roles()
 	set_default_certificate_print_format()
 	setup_jamboree_roles()
+	setup_feedback_event_custom_fields()
 	give_lms_roles_to_admin()
+
+
+def setup_feedback_event_custom_fields():
+	"""Hidden back-link fields on Event so the Employee Feedback calendar sync can reconcile
+	a form's session events (one query per form) and do clean update/cancel. Idempotent."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields(
+		{
+			"Event": [
+				{
+					"fieldname": "custom_feedback_form",
+					"label": "Employee Feedback Form",
+					"fieldtype": "Link",
+					"options": "Employee Feedback Form",
+					"insert_after": "description",
+					"hidden": 1,
+					"read_only": 1,
+					"no_copy": 1,
+					"print_hide": 1,
+				},
+				{
+					"fieldname": "custom_feedback_key",
+					"label": "Feedback Session Key",
+					"fieldtype": "Data",
+					"insert_after": "custom_feedback_form",
+					"hidden": 1,
+					"read_only": 1,
+					"no_copy": 1,
+					"print_hide": 1,
+				},
+			]
+		},
+		ignore_validate=True,
+	)
 
 
 def before_uninstall():
