@@ -219,6 +219,9 @@
 							<tr v-if="expandedReport === report.name && report.enrollments?.length">
 								<td colspan="8" class="p-0">
 									<div class="bg-surface-gray-1">
+										<div class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4">
+											{{ __('Courses') }}
+										</div>
 										<div
 											v-for="enrollment in report.enrollments"
 											:key="enrollment.course"
@@ -257,6 +260,9 @@
 							<tr v-if="expandedReport === report.name && report.resource_folders?.length">
 								<td colspan="8" class="p-0">
 									<div class="bg-surface-gray-1">
+										<div class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4">
+											{{ __('Resource Quizzes') }}
+										</div>
 										<div
 											v-for="folder in report.resource_folders"
 											:key="folder.folder_name"
@@ -267,9 +273,7 @@
 											</div>
 											<div class="flex items-center space-x-3">
 												<span class="text-xs text-ink-gray-5">
-													{{
-														__('{0} Quizzes ({1}%)', [folder.quiz_count, folder.avg_score])
-													}}
+													{{ __('{0} Quizzes').format(folder.quiz_count) }}
 												</span>
 												<Badge
 													:label="__('Completed')"
