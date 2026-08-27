@@ -5,7 +5,9 @@ from frappe.utils import getdate, today
 RESOURCE_ROOT_FOLDER = "Home/LMS Resources"
 
 ALLOWED_RESOURCE_EXTENSIONS = {"PDF"}
-MAX_RESOURCE_FILE_SIZE = 25 * 1024 * 1024  # 25 MB - matches Frappe's own default max upload size (get_max_file_size)
+MAX_RESOURCE_FILE_SIZE = (
+	25 * 1024 * 1024
+)  # 25 MB - matches Frappe's own default max upload size (get_max_file_size)
 
 
 def validate_resource_file(file_name, size):

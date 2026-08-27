@@ -28,7 +28,10 @@
 			<EmployeeFeedbackList :heading="__('Employee Feedback')" role="manager" />
 
 			<!-- Search and Filters -->
-			<div v-if="dashboard.data?.reports?.length" class="mb-6 flex flex-wrap gap-3">
+			<div
+				v-if="dashboard.data?.reports?.length"
+				class="mb-6 flex flex-wrap gap-3"
+			>
 				<div class="flex-1 min-w-[250px]">
 					<Input
 						v-model="searchQuery"
@@ -54,11 +57,7 @@
 					:placeholder="__('All Progress Levels')"
 					class="w-48"
 				/>
-				<Button
-					v-if="hasActiveFilters"
-					variant="subtle"
-					@click="clearFilters"
-				>
+				<Button v-if="hasActiveFilters" variant="subtle" @click="clearFilters">
 					<template #prefix>
 						<X class="size-4 stroke-1.5" />
 					</template>
@@ -109,9 +108,7 @@
 				v-else-if="!dashboard.data?.reports?.length"
 				class="text-center py-20"
 			>
-				<BarChart3
-					class="size-12 mx-auto text-ink-gray-4 stroke-1"
-				/>
+				<BarChart3 class="size-12 mx-auto text-ink-gray-4 stroke-1" />
 				<p class="mt-3 text-ink-gray-5">
 					{{
 						__(
@@ -128,7 +125,12 @@
 				>
 					<span>{{ __('Team Learning Progress') }}</span>
 					<span class="text-sm font-normal text-ink-gray-5">
-						{{ __('Showing {0} of {1}', [paginatedReports.length, filteredReports.length]) }}
+						{{
+							__('Showing {0} of {1}', [
+								paginatedReports.length,
+								filteredReports.length,
+							])
+						}}
 					</span>
 				</div>
 				<table class="w-full">
@@ -140,7 +142,10 @@
 							<th class="px-4 py-3 text-center">{{ __('Courses') }}</th>
 							<th class="px-4 py-3 text-center">{{ __('Completed') }}</th>
 							<th class="px-4 py-3">{{ __('Avg Progress') }}</th>
-							<th class="px-4 py-3 text-center cursor-pointer hover:text-ink-gray-9" @click="openQuizAnalytics">
+							<th
+								class="px-4 py-3 text-center cursor-pointer hover:text-ink-gray-9"
+								@click="openQuizAnalytics"
+							>
 								{{ __('Quiz Score') }}
 								<BarChart3 class="inline size-3 ml-1" />
 							</th>
@@ -148,10 +153,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						<template
-							v-for="report in paginatedReports"
-							:key="report.name"
-						>
+						<template v-for="report in paginatedReports" :key="report.name">
 							<tr
 								class="border-b hover:bg-surface-gray-1 cursor-pointer transition-colors"
 								@click="toggleReport(report.name)"
@@ -208,18 +210,28 @@
 									class="px-4 py-3 text-center cursor-pointer hover:text-blue-600 hover:underline"
 									@click.stop="openQuizAnalytics(report)"
 								>
-									<span class="font-semibold">{{ report.avg_quiz_score || 0 }}%</span>
-									<span class="text-xs text-ink-gray-5 block">{{ report.quiz_scores?.length || 0 }} quizzes</span>
+									<span class="font-semibold"
+										>{{ report.avg_quiz_score || 0 }}%</span
+									>
+									<span class="text-xs text-ink-gray-5 block"
+										>{{ report.quiz_scores?.length || 0 }} quizzes</span
+									>
 								</td>
 								<td class="px-4 py-3 text-ink-gray-7 text-center">
 									{{ report.avg_assignment_score || 0 }}%
 								</td>
 							</tr>
 							<!-- Expanded: Course Details -->
-							<tr v-if="expandedReport === report.name && report.enrollments?.length">
+							<tr
+								v-if="
+									expandedReport === report.name && report.enrollments?.length
+								"
+							>
 								<td colspan="8" class="p-0">
 									<div class="bg-surface-gray-1">
-										<div class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4">
+										<div
+											class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4"
+										>
 											{{ __('Courses') }}
 										</div>
 										<div
@@ -232,10 +244,14 @@
 											</div>
 											<div class="flex items-center space-x-3">
 												<div class="w-24">
-													<div class="w-full bg-surface-gray-3 rounded-full h-1.5">
+													<div
+														class="w-full bg-surface-gray-3 rounded-full h-1.5"
+													>
 														<div
 															class="bg-blue-500 h-1.5 rounded-full transition-all"
-															:style="{ width: (enrollment.progress || 0) + '%' }"
+															:style="{
+																width: (enrollment.progress || 0) + '%',
+															}"
 														></div>
 													</div>
 												</div>
@@ -245,7 +261,11 @@
 												<Badge
 													:label="getEnrollmentStatus(enrollment.progress)"
 													variant="subtle"
-													:theme="getStatusTheme(getEnrollmentStatus(enrollment.progress))"
+													:theme="
+														getStatusTheme(
+															getEnrollmentStatus(enrollment.progress)
+														)
+													"
 													size="sm"
 												/>
 											</div>
@@ -257,10 +277,17 @@
 								 Resource folder (Resources are a company-wide library, not
 								 course content, so this is shown separately from course
 								 enrollments above, same distinction Employee Dashboard makes). -->
-							<tr v-if="expandedReport === report.name && report.resource_folders?.length">
+							<tr
+								v-if="
+									expandedReport === report.name &&
+									report.resource_folders?.length
+								"
+							>
 								<td colspan="8" class="p-0">
 									<div class="bg-surface-gray-1">
-										<div class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4">
+										<div
+											class="px-4 pt-3 pb-1 pl-16 text-xs font-semibold uppercase text-ink-gray-4"
+										>
 											{{ __('Resource Quizzes') }}
 										</div>
 										<div
@@ -294,7 +321,9 @@
 								"
 							>
 								<td colspan="6" class="p-0">
-									<div class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b">
+									<div
+										class="bg-surface-gray-1 px-4 py-3 pl-16 text-sm text-ink-gray-5 border-b"
+									>
 										{{ __('No course enrollments') }}
 									</div>
 								</td>
@@ -303,7 +332,10 @@
 					</tbody>
 				</table>
 				<!-- Pagination -->
-				<div v-if="filteredReports.length > perPage" class="px-4 py-3 border-t bg-surface-gray-1 flex items-center justify-between">
+				<div
+					v-if="filteredReports.length > perPage"
+					class="px-4 py-3 border-t bg-surface-gray-1 flex items-center justify-between"
+				>
 					<div class="flex items-center space-x-2">
 						<span class="text-sm text-ink-gray-5">{{ __('Show') }}</span>
 						<FormControl
@@ -340,10 +372,7 @@
 		</div>
 
 		<!-- Quiz Analytics Modal -->
-		<QuizAnalyticsModal
-			v-model="showQuizModal"
-			:employee="selectedEmployee"
-		/>
+		<QuizAnalyticsModal v-model="showQuizModal" :employee="selectedEmployee" />
 	</div>
 </template>
 
@@ -439,18 +468,20 @@ const dashboard = createResource({
 		console.log('Manager Dashboard Data:', {
 			total_reports: data?.reports?.length || 0,
 			team_size: data?.summary?.team_size || 0,
-			reports: data?.reports
+			reports: data?.reports,
 		})
-	}
+	},
 })
 
 // Computed: Department options from data
 const departmentOptions = computed(() => {
 	if (!dashboard.data?.reports) return []
-	const depts = [...new Set(dashboard.data.reports.map(r => r.department).filter(Boolean))]
+	const depts = [
+		...new Set(dashboard.data.reports.map((r) => r.department).filter(Boolean)),
+	]
 	return [
 		{ label: __('All Departments'), value: '' },
-		...depts.map(d => ({ label: d, value: d }))
+		...depts.map((d) => ({ label: d, value: d })),
 	]
 })
 
@@ -463,22 +494,23 @@ const filteredReports = computed(() => {
 	// Search filter
 	if (searchQuery.value) {
 		const query = searchQuery.value.toLowerCase()
-		filtered = filtered.filter(r =>
-			r.employee_name?.toLowerCase().includes(query) ||
-			r.department?.toLowerCase().includes(query) ||
-			r.designation?.toLowerCase().includes(query)
+		filtered = filtered.filter(
+			(r) =>
+				r.employee_name?.toLowerCase().includes(query) ||
+				r.department?.toLowerCase().includes(query) ||
+				r.designation?.toLowerCase().includes(query)
 		)
 	}
 
 	// Department filter
 	if (departmentFilter.value) {
-		filtered = filtered.filter(r => r.department === departmentFilter.value)
+		filtered = filtered.filter((r) => r.department === departmentFilter.value)
 	}
 
 	// Progress filter
 	if (progressFilter.value) {
 		const [min, max] = progressFilter.value.split('-').map(Number)
-		filtered = filtered.filter(r => {
+		filtered = filtered.filter((r) => {
 			const progress = r.avg_progress || 0
 			return progress >= min && progress <= max
 		})
@@ -502,12 +534,16 @@ const totalPages = computed(() => {
 const exportCSV = async () => {
 	exporting.value = true
 	try {
-		const data = await call(
-			'lms.lms.custom.dashboard_api.export_team_progress'
-		)
+		const data = await call('lms.lms.custom.dashboard_api.export_team_progress')
 		if (!data || !data.length) return
 
-		const headers = ['Employee', 'Department', 'Designation', 'Course', 'Progress']
+		const headers = [
+			'Employee',
+			'Department',
+			'Designation',
+			'Course',
+			'Progress',
+		]
 		const csvRows = [headers.join(',')]
 
 		for (const row of data) {

@@ -130,8 +130,8 @@
 					selectionMode && !item.is_folder
 						? toggleSelected(item)
 						: item.is_folder
-							? openFolder(item.name)
-							: viewFile(item)
+						? openFolder(item.name)
+						: viewFile(item)
 				"
 			>
 				<input
@@ -317,7 +317,10 @@
 					</Button>
 				</div>
 
-				<div v-if="canManage && !selectionMode" class="flex items-center space-x-2 shrink-0 ml-2">
+				<div
+					v-if="canManage && !selectionMode"
+					class="flex items-center space-x-2 shrink-0 ml-2"
+				>
 					<Button size="sm" @click="openManageDialog(item)">
 						<template #prefix>
 							<Settings class="h-4 w-4 stroke-1.5" />

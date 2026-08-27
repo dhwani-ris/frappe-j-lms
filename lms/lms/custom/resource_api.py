@@ -12,6 +12,7 @@ from lms.lms.custom.resource_notify import notify_resource_change
 
 RESOURCE_MANAGER_ROLES = {"Moderator", "Course Creator", "LMS Master Trainer", "System Manager"}
 
+
 def is_resource_manager(user=None):
 	"""Who's allowed to manage Resources (and see drafts of them) -
 	deliberately role-based, NOT frappe.has_permission("File", "write").
@@ -436,9 +437,7 @@ def bulk_publish_resources(file_names, value, publish_on=None):
 			if doc.is_folder:
 				summary["skipped_folders"].append(file_name)
 				continue
-			_save_fields_with_retry(
-				file_name, {"published": value, "publish_on": publish_on or None}
-			)
+			_save_fields_with_retry(file_name, {"published": value, "publish_on": publish_on or None})
 			summary["published"].append(file_name)
 		except Exception as exc:
 			frappe.log_error(title="bulk_publish_resources failed for one file")
