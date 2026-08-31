@@ -4,8 +4,10 @@ from frappe.utils import getdate, today
 
 RESOURCE_ROOT_FOLDER = "Home/LMS Resources"
 
-ALLOWED_RESOURCE_EXTENSIONS = {"PDF", "PPT", "PPTX"}
-MAX_RESOURCE_FILE_SIZE = 25 * 1024 * 1024  # 25 MB - matches Frappe's own default max upload size (get_max_file_size)
+ALLOWED_RESOURCE_EXTENSIONS = {"PDF"}
+MAX_RESOURCE_FILE_SIZE = (
+	25 * 1024 * 1024
+)  # 25 MB - matches Frappe's own default max upload size (get_max_file_size)
 
 
 def validate_resource_file(file_name, size):
@@ -25,7 +27,7 @@ def validate_resource_file(file_name, size):
 	"""
 	extension = (file_name.rsplit(".", 1)[-1] if "." in file_name else "").upper()
 	if extension not in ALLOWED_RESOURCE_EXTENSIONS:
-		frappe.throw(_("Only PDF and PPT/PPTX files are allowed as Resources."))
+		frappe.throw(_("Only PDF files are allowed as Resources."))
 	if size > MAX_RESOURCE_FILE_SIZE:
 		frappe.throw(
 			_("File exceeds the maximum allowed size of {0} MB.").format(

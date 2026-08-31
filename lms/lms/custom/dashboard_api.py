@@ -57,6 +57,24 @@ def get_manager_dashboard():
 	else:
 		reports = get_direct_reports()
 
+	# Cached across the whole request, same reasoning as get_trainer_dashboard's
+	# identical caches - many reports repeat the same resource folders/courses.
+	top_level_folder_name_cache = {}
+	course_title_cache = {}
+
+	def top_level_folder_name(file_folder):
+		if file_folder not in top_level_folder_name_cache:
+			top_folder = get_top_level_folder(file_folder)
+			top_level_folder_name_cache[file_folder] = (
+				frappe.db.get_value("File", top_folder, "file_name") if top_folder else None
+			)
+		return top_level_folder_name_cache[file_folder]
+
+	def course_title(course):
+		if course not in course_title_cache:
+			course_title_cache[course] = frappe.db.get_value("LMS Course", course, "title") or course
+		return course_title_cache[course]
+
 	for report in reports:
 		if not report.user_id:
 			report.enrollments = []
@@ -65,6 +83,7 @@ def get_manager_dashboard():
 			report.avg_progress = 0
 			report.quiz_scores = []
 			report.avg_quiz_score = 0
+			report.resource_folders = []
 			report.assignment_scores = []
 			report.avg_assignment_score = 0
 			continue
@@ -77,16 +96,42 @@ def get_manager_dashboard():
 		for enrollment in enrollments:
 			enrollment.course_title = frappe.db.get_value("LMS Course", enrollment.course, "title")
 
-		# Get quiz scores
+		# Get quiz scores - includes resource-linked quizzes too (Resources are a
+		# company-wide library, not course content, so they're never excluded by
+		# a course/batch filter here).
 		quiz_submissions = frappe.get_all(
 			"LMS Quiz Submission",
 			{"member": report.user_id},
-			["quiz", "score", "percentage", "creation"],
+			["name", "quiz", "score", "percentage", "creation"],
 			order_by="creation desc",
 		)
+		resource_folders_by_name = {}
 		for quiz_sub in quiz_submissions:
-			quiz_title = frappe.db.get_value("LMS Quiz", quiz_sub.quiz, "title")
+			quiz_title, quiz_course, quiz_resource = frappe.db.get_value(
+				"LMS Quiz", quiz_sub.quiz, ["title", "course", "resource"]
+			)
 			quiz_sub.quiz_title = quiz_title
+
+			# `context_label` unifies "which course" and "which resource folder" a
+			# submission belongs to, same convention as get_trainer_dashboard - this
+			# is what QuizAnalyticsModal's shared "Course / Folder" column reads.
+			if quiz_resource:
+				document_name, resource_folder = frappe.db.get_value(
+					"File", quiz_resource, ["file_name", "folder"]
+				)
+				folder_name = top_level_folder_name(resource_folder)
+				quiz_sub.context_type = "resource"
+				quiz_sub.document_name = document_name
+				quiz_sub.folder_name = folder_name
+				quiz_sub.context_label = folder_name or document_name
+				if folder_name:
+					resource_folders_by_name.setdefault(folder_name, []).append(quiz_sub)
+			elif quiz_course:
+				quiz_sub.context_type = "course"
+				quiz_sub.context_label = course_title(quiz_course)
+			else:
+				quiz_sub.context_type = None
+				quiz_sub.context_label = None
 
 		# Get assignment scores
 		assignment_submissions = frappe.get_all(
@@ -111,6 +156,16 @@ def get_manager_dashboard():
 			if quiz_submissions
 			else 0
 		)
+		report.resource_folders = [
+			{
+				"folder_name": folder_name,
+				"quiz_count": len(submissions),
+				"avg_score": round(
+					sum(float(s.get("percentage", 0) or 0) for s in submissions) / len(submissions), 1
+				),
+			}
+			for folder_name, submissions in resource_folders_by_name.items()
+		]
 		report.assignment_scores = assignment_submissions
 		passed_assignments = len([a for a in assignment_submissions if a.status == "Pass"])
 		report.avg_assignment_score = (
@@ -404,6 +459,7 @@ def get_trainer_dashboard():
 				)
 
 			resource_quizzes = []
+			course_quiz_submissions = []
 			for quiz_sub in quiz_submissions:
 				quiz_title, quiz_course, quiz_resource = frappe.db.get_value(
 					"LMS Quiz", quiz_sub.quiz, ["title", "course", "resource"]
@@ -457,12 +513,18 @@ def get_trainer_dashboard():
 							}
 						)
 					)
-				elif quiz_course:
-					quiz_sub.context_type = "course"
-					quiz_sub.context_label = course_title(quiz_course)
 				else:
-					quiz_sub.context_type = None
-					quiz_sub.context_label = None
+					if quiz_course:
+						quiz_sub.context_type = "course"
+						quiz_sub.context_label = course_title(quiz_course)
+					else:
+						quiz_sub.context_type = None
+						quiz_sub.context_label = None
+					# Only non-resource submissions count toward this batch row's own
+					# quiz stats - resource-linked ones are surfaced separately via
+					# resource_quizzes/resource_folder_rows below, so counting them
+					# here too would double-count the same submission in both places.
+					course_quiz_submissions.append(quiz_sub)
 
 			# Get assignment submissions only for courses in this batch
 			if batch_courses:
@@ -487,15 +549,16 @@ def get_trainer_dashboard():
 			student.total_courses = len(enrollments)
 			student.status = calculate_status(student.avg_progress)
 			student.user_image = frappe.db.get_value("User", student.member, "user_image")
-			student.quiz_scores = quiz_submissions
+			student.quiz_scores = course_quiz_submissions
 			student.resource_quizzes = resource_quizzes
-			student.quiz_count = len(quiz_submissions)
+			student.quiz_count = len(course_quiz_submissions)
 			student.avg_quiz_score = (
 				round(
-					sum(float(q.get("percentage", 0) or 0) for q in quiz_submissions) / len(quiz_submissions),
+					sum(float(q.get("percentage", 0) or 0) for q in course_quiz_submissions)
+					/ len(course_quiz_submissions),
 					1,
 				)
-				if quiz_submissions
+				if course_quiz_submissions
 				else 0
 			)
 			student.assignment_scores = assignment_submissions

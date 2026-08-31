@@ -32,6 +32,9 @@
 					<List class="h-4 w-4 stroke-1.5" />
 				</button>
 			</div>
+			<Button v-if="canManage" variant="subtle" @click="toggleSelectionMode">
+				{{ selectionMode ? __('Cancel') : __('Select') }}
+			</Button>
 			<FileUploader
 				v-if="canManage"
 				:uploadArgs="{ folder: currentFolder, private: true }"
@@ -82,6 +85,27 @@
 		</FormControl>
 	</div>
 
+	<div v-if="selectionMode" class="px-5 pt-3 sm:px-10 flex items-center gap-3">
+		<span class="text-sm text-ink-gray-6">
+			{{ __('{0} selected').format(selectedFiles.size) }}
+		</span>
+		<FormControl
+			type="date"
+			v-model="bulkPublishOn"
+			:placeholder="__('Publish immediately')"
+			class="w-44"
+		/>
+		<Button
+			size="sm"
+			variant="solid"
+			:disabled="!selectedFiles.size"
+			:loading="bulkPublishing"
+			@click="bulkPublishSelected"
+		>
+			{{ bulkPublishOn ? __('Schedule Publish') : __('Publish Now') }}
+		</Button>
+	</div>
+
 	<div class="px-5 py-5 sm:px-10">
 		<EmptyState
 			v-if="!loading && !isSearching && items.length === 0"
@@ -102,10 +126,23 @@
 				v-for="item in items"
 				:key="item.name"
 				class="group relative border rounded-lg p-4 hover:bg-surface-gray-1 hover:shadow-sm transition-all cursor-pointer"
-				@click="item.is_folder ? openFolder(item.name) : viewFile(item)"
+				@click="
+					selectionMode && !item.is_folder
+						? toggleSelected(item)
+						: item.is_folder
+						? openFolder(item.name)
+						: viewFile(item)
+				"
 			>
+				<input
+					v-if="selectionMode && !item.is_folder"
+					type="checkbox"
+					:checked="isSelected(item)"
+					class="absolute top-1.5 left-1.5 h-4 w-4"
+					@click.stop="toggleSelected(item)"
+				/>
 				<div
-					v-if="tileActions(item).length"
+					v-if="!selectionMode && tileActions(item).length"
 					class="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
 					@click.stop
 				>
@@ -168,6 +205,13 @@
 					:class="item.is_folder ? 'cursor-pointer' : ''"
 					@click="item.is_folder ? openFolder(item.name) : null"
 				>
+					<input
+						v-if="selectionMode && !item.is_folder"
+						type="checkbox"
+						:checked="isSelected(item)"
+						class="h-4 w-4 shrink-0"
+						@click.stop="toggleSelected(item)"
+					/>
 					<Folder
 						v-if="item.is_folder"
 						class="h-5 w-5 stroke-1.5 text-ink-gray-6 shrink-0"
@@ -231,7 +275,7 @@
 				</div>
 
 				<div
-					v-if="!item.is_folder"
+					v-if="!selectionMode && !item.is_folder"
 					class="flex items-center space-x-2 shrink-0"
 				>
 					<Button size="sm" @click="viewFile(item)">
@@ -273,7 +317,10 @@
 					</Button>
 				</div>
 
-				<div v-if="canManage" class="flex items-center space-x-2 shrink-0 ml-2">
+				<div
+					v-if="canManage && !selectionMode"
+					class="flex items-center space-x-2 shrink-0 ml-2"
+				>
 					<Button size="sm" @click="openManageDialog(item)">
 						<template #prefix>
 							<Settings class="h-4 w-4 stroke-1.5" />
@@ -318,13 +365,13 @@
 				<FormControl
 					v-if="manageTarget.published"
 					type="date"
-					:modelValue="manageTarget.publish_on || ''"
+					:modelValue="pendingPublishOn ?? manageTarget.publish_on ?? ''"
 					:label="__('Publish On')"
 					:placeholder="__('Immediately')"
-					@update:modelValue="(value) => setPublishOn(manageTarget, value)"
+					@update:modelValue="(value) => (pendingPublishOn = value)"
+					@blur="commitPublishOn(manageTarget)"
 				/>
 				<FormControl
-					v-if="manageTarget.is_folder"
 					type="select"
 					:modelValue="manageTarget.download_permission || ''"
 					:label="__('Download Permission')"
@@ -435,7 +482,6 @@ import {
 	List,
 	ListChecks,
 	MoreVertical,
-	Presentation,
 	RefreshCw,
 	Search,
 	Settings,
@@ -445,10 +491,8 @@ import {
 
 const ROOT_FOLDER = 'Home/LMS Resources'
 
-// PDF renders inline natively; PPT/PPTX get converted to PDF server-side
-// (stream_resource, via headless LibreOffice) before being streamed back,
-// so they can go through the exact same inline viewer.
-const INLINE_VIEWABLE_TYPES = ['PDF', 'PPT', 'PPTX']
+// PDF renders inline natively
+const INLINE_VIEWABLE_TYPES = ['PDF']
 
 const props = defineProps({
 	folder: {
@@ -477,6 +521,52 @@ const canManage = computed(() => {
 		data && (data.is_moderator || data.is_instructor || data.is_master_trainer)
 	)
 })
+
+const selectionMode = ref(false)
+const selectedFiles = ref(new Set())
+const bulkPublishing = ref(false)
+const bulkPublishOn = ref('')
+
+const toggleSelectionMode = () => {
+	selectionMode.value = !selectionMode.value
+	selectedFiles.value = new Set()
+	bulkPublishOn.value = ''
+}
+
+const isSelected = (item) => selectedFiles.value.has(item.name)
+
+const toggleSelected = (item) => {
+	const next = new Set(selectedFiles.value)
+	if (next.has(item.name)) next.delete(item.name)
+	else next.add(item.name)
+	selectedFiles.value = next
+}
+
+const bulkPublishSelected = async () => {
+	if (!selectedFiles.value.size) return
+	bulkPublishing.value = true
+	try {
+		const result = await call(
+			'lms.lms.custom.resource_api.bulk_publish_resources',
+			{
+				file_names: Array.from(selectedFiles.value),
+				value: 1,
+				publish_on: bulkPublishOn.value || null,
+			}
+		)
+		toast.success(
+			__('{0} file(s) published').format(result.counts?.published || 0)
+		)
+		selectedFiles.value = new Set()
+		selectionMode.value = false
+		bulkPublishOn.value = ''
+		loadContents()
+	} catch (err) {
+		toast.error(err.messages?.[0] || err.message || err)
+	} finally {
+		bulkPublishing.value = false
+	}
+}
 
 const loadContents = async () => {
 	loading.value = true
@@ -576,9 +666,19 @@ const onUploadSuccess = () => {
 
 const onUploadFailure = (err) => {
 	console.error('Resource upload failed:', err)
-	toast.error(
-		__('Upload failed: ') + (err?.messages?.[0] || err?.message || err)
-	)
+	// FileUploader emits the raw, unparsed error (it only parses this same
+	// shape into a readable message for its own internal display) - so we
+	// parse it the same way here to get an actual message instead of
+	// showing "[object Object]".
+	let errorMessage = 'Error Uploading File'
+	if (err?._server_messages) {
+		errorMessage = JSON.parse(JSON.parse(err._server_messages)[0]).message
+	} else if (err?.exc) {
+		errorMessage = JSON.parse(err.exc)[0].split('\n').slice(-2, -1)[0]
+	} else if (err?.message) {
+		errorMessage = err.message
+	}
+	toast.error(__('Upload failed: ') + errorMessage)
 }
 
 const showNewFolder = ref(false)
@@ -644,7 +744,6 @@ const tileIcon = (item) => {
 	const type = (item.file_type || '').toUpperCase()
 	if (['JPG', 'JPEG', 'PNG', 'GIF', 'SVG', 'WEBP'].includes(type))
 		return ImageIcon
-	if (['PPT', 'PPTX'].includes(type)) return Presentation
 	if (['XLS', 'XLSX', 'CSV'].includes(type)) return FileSpreadsheet
 	if (type === 'PDF') return FileText
 	return FileIcon
@@ -698,9 +797,11 @@ const tileActions = (item) => {
 
 const showManageDialog = ref(false)
 const manageTarget = ref(null)
+const pendingPublishOn = ref(null)
 
 const openManageDialog = (item) => {
 	manageTarget.value = item
+	pendingPublishOn.value = null
 	showManageDialog.value = true
 }
 
@@ -711,7 +812,12 @@ const setFolderPermission = async (item, value) => {
 			value,
 		})
 		item.download_permission = value
+		item.can_download = value !== 'View Only'
 		toast.success(__('Updated'))
+		// Reload so a folder's cascade to its children is actually visible -
+		// unlike a single-item change, this can affect every other row
+		// currently on screen, which a local mutation alone can't reflect.
+		loadContents()
 	} catch (err) {
 		toast.error(err.messages?.[0] || err.message || err)
 	}
@@ -725,15 +831,29 @@ const setPublished = async (item, value) => {
 		})
 		item.published = value
 		toast.success(value ? __('Published') : __('Unpublished'))
-		// Deliberately not reloading the whole list here: it would replace
-		// every item with a fresh object, silently disconnecting the open
-		// Manage dialog's `manageTarget` reference from the row underneath
-		// it. The direct mutation above already updates this item's own
-		// badge/state immediately; other rows (e.g. children of a folder
-		// just published) will pick up the new state on next navigation.
+		// Publishing/unpublishing a folder cascades to every file and
+		// subfolder under it server-side, so a local mutation of just this
+		// one item can't reflect the real effect on every other row
+		// currently on screen - reload to pick up the cascade. (This does
+		// mean the open Manage dialog's `manageTarget` stops being the same
+		// object as the row underneath it once the list refreshes, but the
+		// dialog already has the value it needs from the mutation above.)
+		loadContents()
 	} catch (err) {
 		toast.error(err.messages?.[0] || err.message || err)
 	}
+}
+
+// Only fires once the user is actually done picking a date (on blur),
+// not on every intermediate keystroke/segment change a native date input
+// emits - firing setPublishOn on every one of those sent multiple
+// requests with different partial values racing each other, and
+// whichever happened to land last server-side (not necessarily the
+// last one triggered) is what stuck, sometimes saving the wrong date.
+const commitPublishOn = (item) => {
+	if (pendingPublishOn.value === null) return
+	setPublishOn(item, pendingPublishOn.value)
+	pendingPublishOn.value = null
 }
 
 const setPublishOn = async (item, value) => {
@@ -744,6 +864,9 @@ const setPublishOn = async (item, value) => {
 		})
 		item.publish_on = value
 		toast.success(value ? __('Scheduled') : __('Publishing immediately'))
+		// Same reasoning as setPublished/setFolderPermission - reload so this
+		// change is reflected everywhere it needs to be, not just this item.
+		loadContents()
 	} catch (err) {
 		toast.error(err.messages?.[0] || err.message || err)
 	}
@@ -855,9 +978,6 @@ const viewFile = async (item) => {
 		// same trick this app already uses for lesson PDFs (lms/plugins.py
 		// pdf_renderer). Opening a bare new tab instead would hand the
 		// user the browser's own PDF viewer, download button included.
-		// PPT/PPTX get converted to PDF server-side first (stream_resource,
-		// via headless LibreOffice) - to this iframe it's just a PDF
-		// either way.
 		viewingItem.value = item
 		showViewer.value = true
 	} else {

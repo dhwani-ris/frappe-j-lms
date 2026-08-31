@@ -1,7 +1,3 @@
-import os
-import subprocess
-import tempfile
-
 import frappe
 from frappe import _
 from frappe.utils import cint
@@ -15,13 +11,6 @@ from lms.lms.custom.resource_constants import (
 from lms.lms.custom.resource_notify import notify_resource_change
 
 RESOURCE_MANAGER_ROLES = {"Moderator", "Course Creator", "LMS Master Trainer", "System Manager"}
-
-# PPT/PPTX have no browser-native inline renderer at all, unlike PDF -
-# converted to PDF on the fly for viewing only (see stream_resource).
-# Legacy .ppt and modern .pptx both convert fine through the same
-# headless LibreOffice call; Download still always serves the original
-# file untouched, never a converted copy.
-CONVERTIBLE_TO_PDF_TYPES = {"PPT", "PPTX"}
 
 
 def is_resource_manager(user=None):
@@ -340,28 +329,122 @@ def _get_scoped_resource(file_name):
 	return doc
 
 
+def _save_fields_with_retry(file_name, fields, max_attempts=3):
+	"""Load `file_name` fresh, apply `fields` (a {fieldname: value} dict),
+	and save - retrying by reloading and reapplying if the save loses an
+	optimistic-lock race (frappe.TimestampMismatchError, or the
+	equivalent DB-level "Record has changed since last read" surfaced as
+	frappe.QueryDeadlockError).
+
+	Necessary because two independent requests can easily touch the same
+	File record close together - e.g. toggling Published and picking a
+	Publish On date in the same Manage dialog fire as two separate API
+	calls, and cascading a folder's state to its children (see
+	_cascade_field) makes that first request noticeably slower, widening
+	the window for a second request to load a since-stale copy and get
+	rejected outright instead of both succeeding. Safe to retry since
+	this is always the same fixed set of field assignments reapplied to a
+	fresh copy, never multi-step logic that could go wrong on a second
+	attempt.
+	"""
+	last_exc = None
+	for _attempt in range(max_attempts):
+		doc = frappe.get_doc("File", file_name)
+		for fieldname, value in fields.items():
+			doc.set(fieldname, value)
+		try:
+			doc.save(ignore_permissions=True)
+			return doc
+		except (frappe.TimestampMismatchError, frappe.QueryDeadlockError) as exc:
+			last_exc = exc
+	raise last_exc
+
+
 @frappe.whitelist()
 def set_resource_download_permission(file_name, value):
 	_check_resource_admin()
 	doc = _get_scoped_resource(file_name)
-	doc.download_permission = value
-	doc.save(ignore_permissions=True)
+	is_folder = doc.is_folder
+	_save_fields_with_retry(file_name, {"download_permission": value})
+
+	if is_folder:
+		_cascade_field(file_name, "download_permission", value)
 
 
 @frappe.whitelist()
 def set_resource_published(file_name, value):
 	_check_resource_admin()
 	doc = _get_scoped_resource(file_name)
-	doc.published = cint(value)
-	doc.save(ignore_permissions=True)
+	is_folder = doc.is_folder
+	value = cint(value)
+	_save_fields_with_retry(file_name, {"published": value})
+
+	if is_folder:
+		_cascade_field(file_name, "published", value)
+
+
+def _cascade_field(folder_name, fieldname, value):
+	"""Push `value` onto `fieldname` for every File under `folder_name`,
+	recursively through nested subfolders - a one-time push, not a
+	standing constraint. An individual file can be changed independently
+	afterward (e.g. a manager setting one file back to View Only inside an
+	otherwise View & Download folder, or unpublishing one file inside an
+	otherwise-published folder) and it stays that way; the cascade only
+	re-fires the next time the folder's own value is itself changed again.
+
+	Shared by set_resource_published and set_resource_download_permission -
+	same recursive-walk shape, just a different field.
+	"""
+	children = frappe.get_all("File", filters={"folder": folder_name}, fields=["name", "is_folder"])
+	for child in children:
+		_save_fields_with_retry(child.name, {fieldname: value})
+		if child.is_folder:
+			_cascade_field(child.name, fieldname, value)
 
 
 @frappe.whitelist()
 def set_resource_publish_on(file_name, value):
 	_check_resource_admin()
-	doc = _get_scoped_resource(file_name)
-	doc.publish_on = value or None
-	doc.save(ignore_permissions=True)
+	_get_scoped_resource(file_name)
+	_save_fields_with_retry(file_name, {"publish_on": value or None})
+
+
+@frappe.whitelist()
+def bulk_publish_resources(file_names, value, publish_on=None):
+	"""Manager: publish/unpublish multiple files in one action, optionally
+	scheduling them all for the same future date. Files only - folders
+	keep their own single toggle in the Manage dialog, which already
+	cascades to its own subtree (see set_resource_published/
+	_cascade_publish above), so bulk-selecting folders here would double
+	up on that behaviour in a confusing way.
+
+	Resolves each file independently and reports a summary, same pattern
+	as the trainer dashboard's bulk_unlock_chapter - one bad file doesn't
+	abort the whole batch.
+	"""
+	_check_resource_admin()
+
+	if isinstance(file_names, str):
+		file_names = frappe.parse_json(file_names)
+	if not file_names:
+		frappe.throw(_("No files selected."))
+
+	value = cint(value)
+	summary = {"published": [], "skipped_folders": [], "errors": []}
+	for file_name in file_names:
+		try:
+			doc = _get_scoped_resource(file_name)
+			if doc.is_folder:
+				summary["skipped_folders"].append(file_name)
+				continue
+			_save_fields_with_retry(file_name, {"published": value, "publish_on": publish_on or None})
+			summary["published"].append(file_name)
+		except Exception as exc:
+			frappe.log_error(title="bulk_publish_resources failed for one file")
+			summary["errors"].append({"file_name": file_name, "reason": str(exc)})
+
+	summary["counts"] = {key: len(val) for key, val in summary.items() if isinstance(val, list)}
+	return summary
 
 
 @frappe.whitelist()
@@ -391,11 +474,14 @@ def validate_resource_upload(doc, method=None):
 def get_effective_download_permission(file_name):
 	"""Resolve whether a file can be downloaded, or only viewed.
 
-	This setting is folder-only by design (never set on an individual
-	file) - starts at the file's parent folder and walks up the folder
-	chain, returning the first explicit value found. Defaults to allowed
-	(True) if nothing in the chain has been explicitly set.
+	Nearest explicit value wins, starting at the file itself - a file's
+	own setting overrides its folder's, a folder's overrides its
+	parent's, and so on up the chain. Defaults to allowed (True) if
+	nothing in the chain has been explicitly set.
 	"""
+	own_value = frappe.db.get_value("File", file_name, "download_permission")
+	if own_value:
+		return own_value != "View Only"
 	current = frappe.db.get_value("File", file_name, "folder")
 	while current:
 		value = frappe.db.get_value("File", current, "download_permission")
@@ -459,66 +545,10 @@ def stream_resource(file_name, as_attachment=0):
 
 	file_doc = frappe.get_doc("File", file_name)
 	file_doc.add_viewed(force=True, unique_views=True)  # defense in depth - see mark_resource_viewed
-
-	if not as_attachment and file_doc.file_type in CONVERTIBLE_TO_PDF_TYPES:
-		# Viewing (not downloading) a PPT/PPTX - convert to PDF on the fly
-		# so it renders in the same inline viewer as a real PDF, instead
-		# of handing the browser a format nothing can display natively.
-		# Download (as_attachment=1) never goes through this branch - it
-		# always serves the original file untouched, since converting
-		# there would hand back a PDF when the person asked to download
-		# the actual, editable PowerPoint file.
-		frappe.local.response.filename = os.path.splitext(file_doc.file_name)[0] + ".pdf"
-		frappe.local.response.filecontent = _convert_to_pdf(file_doc)
-		frappe.local.response.type = "download"
-		frappe.local.response.display_content_as = "inline"
-		return
-
 	frappe.local.response.filename = file_doc.file_name
 	frappe.local.response.filecontent = file_doc.get_content()
 	frappe.local.response.type = "download"
 	frappe.local.response.display_content_as = "attachment" if as_attachment else "inline"
-
-
-def _convert_to_pdf(file_doc):
-	"""Converts a PPT/PPTX file to PDF via headless LibreOffice (the
-	`soffice` CLI, confirmed installed and working for both legacy .ppt
-	and modern .pptx). Runs in an isolated temp profile
-	(-env:UserInstallation) so concurrent conversions from different
-	users don't collide over LibreOffice's shared user-profile lock - a
-	known issue when running multiple headless instances at once.
-	"""
-	with tempfile.TemporaryDirectory() as tmpdir:
-		input_path = file_doc.get_full_path()
-		profile_dir = os.path.join(tmpdir, "profile")
-
-		try:
-			subprocess.run(
-				[
-					"soffice",
-					"--headless",
-					"--norestore",
-					f"-env:UserInstallation=file://{profile_dir}",
-					"--convert-to",
-					"pdf",
-					"--outdir",
-					tmpdir,
-					input_path,
-				],
-				capture_output=True,
-				timeout=60,
-				check=True,
-			)
-		except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-			frappe.throw(_("Could not generate a preview for this document. Try downloading it instead."))
-
-		base_name = os.path.splitext(os.path.basename(input_path))[0]
-		pdf_path = os.path.join(tmpdir, f"{base_name}.pdf")
-		if not os.path.exists(pdf_path):
-			frappe.throw(_("Could not generate a preview for this document. Try downloading it instead."))
-
-		with open(pdf_path, "rb") as f:
-			return f.read()
 
 
 def _check_resource_admin():

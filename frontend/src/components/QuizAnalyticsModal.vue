@@ -58,7 +58,12 @@
 						<thead>
 							<tr class="border-b text-left text-sm text-ink-gray-5">
 								<th class="px-4 py-3">{{ __('Quiz') }}</th>
-								<th class="px-4 py-3">{{ __('Course / Folder') }}</th>
+								<th v-if="hasCourseQuizzes" class="px-4 py-3 text-center">
+									{{ __('Course') }}
+								</th>
+								<th v-if="hasResourceQuizzes" class="px-4 py-3 text-center">
+									{{ __('Resource') }}
+								</th>
 								<th class="px-4 py-3 text-center">{{ __('Score') }}</th>
 								<th class="px-4 py-3 text-center">{{ __('Percentage') }}</th>
 								<th class="px-4 py-3 text-center">{{ __('Status') }}</th>
@@ -74,8 +79,21 @@
 								<td class="px-4 py-3 text-ink-gray-9">
 									{{ quiz.quiz_title || quiz.quiz }}
 								</td>
-								<td class="px-4 py-3 text-ink-gray-7">
-									{{ quiz.context_label || '-' }}
+								<td
+									v-if="hasCourseQuizzes"
+									class="px-4 py-3 text-center text-ink-gray-7"
+								>
+									{{
+										quiz.context_type === 'course' ? quiz.context_label : '-'
+									}}
+								</td>
+								<td
+									v-if="hasResourceQuizzes"
+									class="px-4 py-3 text-center text-ink-gray-7"
+								>
+									{{
+										quiz.context_type === 'resource' ? quiz.context_label : '-'
+									}}
 								</td>
 								<td class="px-4 py-3 text-center text-ink-gray-7">
 									{{ quiz.score || 0 }}
@@ -147,6 +165,13 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+const hasCourseQuizzes = computed(() =>
+	props.employee?.quiz_scores?.some((q) => q.context_type === 'course')
+)
+
+const hasResourceQuizzes = computed(() =>
+	props.employee?.quiz_scores?.some((q) => q.context_type === 'resource')
+)
 
 const show = computed({
 	get: () => props.modelValue,
