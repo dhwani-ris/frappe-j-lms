@@ -124,7 +124,10 @@ doc_events = {
 		"on_update": "lms.lms.custom.notifications.notify_on_employee_exit",
 	},
 	"LMS Quiz Submission": {
-		"after_insert": "lms.lms.custom.notifications.notify_on_quiz_submission",
+		"after_insert": [
+			"lms.lms.custom.notifications.notify_on_quiz_submission",
+			"lms.lms.custom.resource_notify.notify_manager_on_resource_quiz_completion",
+		],
 	},
 	"LMS Enrollment": {
 		"on_update": [

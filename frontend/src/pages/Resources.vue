@@ -85,25 +85,70 @@
 		</FormControl>
 	</div>
 
-	<div v-if="selectionMode" class="px-5 pt-3 sm:px-10 flex items-center gap-3">
-		<span class="text-sm text-ink-gray-6">
+	<div
+		v-if="selectionMode"
+		class="mx-5 mt-3 sm:mx-10 rounded-lg border bg-surface-gray-1 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5"
+	>
+		<label class="flex items-center gap-1.5 text-sm text-ink-gray-6 shrink-0">
+			<input
+				type="checkbox"
+				class="h-4 w-4"
+				:checked="allSelected"
+				@change="toggleSelectAll"
+			/>
+			{{ __('Select All') }}
+		</label>
+		<span class="text-sm text-ink-gray-5 shrink-0">
 			{{ __('{0} selected').format(selectedFiles.size) }}
 		</span>
-		<FormControl
-			type="date"
-			v-model="bulkPublishOn"
-			:placeholder="__('Publish immediately')"
-			class="w-44"
-		/>
-		<Button
-			size="sm"
-			variant="solid"
-			:disabled="!selectedFiles.size"
-			:loading="bulkPublishing"
-			@click="bulkPublishSelected"
-		>
-			{{ bulkPublishOn ? __('Schedule Publish') : __('Publish Now') }}
-		</Button>
+
+		<div class="h-6 w-px bg-outline-gray-2 hidden sm:block" />
+
+		<div class="flex items-center gap-2">
+			<span class="text-sm text-ink-gray-6 shrink-0">{{ __('Publish') }}</span>
+			<FormControl
+				type="date"
+				v-model="bulkPublishOn"
+				:placeholder="__('Publish immediately')"
+				class="w-40"
+			/>
+			<Button
+				size="sm"
+				variant="solid"
+				:disabled="!selectedFiles.size"
+				:loading="bulkPublishing"
+				@click="bulkPublishSelected"
+			>
+				{{ bulkPublishOn ? __('Schedule Publish') : __('Publish Now') }}
+			</Button>
+		</div>
+
+		<div class="h-6 w-px bg-outline-gray-2 hidden sm:block" />
+
+		<div class="flex items-center gap-2">
+			<span class="text-sm text-ink-gray-6 shrink-0">{{
+				__('Permission')
+			}}</span>
+			<FormControl
+				type="select"
+				v-model="bulkDownloadPermission"
+				:options="[
+					{ label: __('Set Download Permission'), value: '' },
+					{ label: __('View & Download'), value: 'View & Download' },
+					{ label: __('View Only'), value: 'View Only' },
+				]"
+				class="w-48"
+			/>
+			<Button
+				size="sm"
+				variant="solid"
+				:disabled="!selectedFiles.size || !bulkDownloadPermission"
+				:loading="bulkSettingPermission"
+				@click="bulkSetPermissionSelected"
+			>
+				{{ __('Apply') }}
+			</Button>
+		</div>
 	</div>
 
 	<div class="px-5 py-5 sm:px-10">
@@ -127,7 +172,7 @@
 				:key="item.name"
 				class="group relative border rounded-lg p-4 hover:bg-surface-gray-1 hover:shadow-sm transition-all cursor-pointer"
 				@click="
-					selectionMode && !item.is_folder
+					selectionMode
 						? toggleSelected(item)
 						: item.is_folder
 						? openFolder(item.name)
@@ -135,7 +180,7 @@
 				"
 			>
 				<input
-					v-if="selectionMode && !item.is_folder"
+					v-if="selectionMode"
 					type="checkbox"
 					:checked="isSelected(item)"
 					class="absolute top-1.5 left-1.5 h-4 w-4"
@@ -203,10 +248,12 @@
 				<div
 					class="flex items-center space-x-3 flex-1 min-w-0"
 					:class="item.is_folder ? 'cursor-pointer' : ''"
-					@click="item.is_folder ? openFolder(item.name) : null"
+					@click="
+						!selectionMode && item.is_folder ? openFolder(item.name) : null
+					"
 				>
 					<input
-						v-if="selectionMode && !item.is_folder"
+						v-if="selectionMode"
 						type="checkbox"
 						:checked="isSelected(item)"
 						class="h-4 w-4 shrink-0"
@@ -526,11 +573,14 @@ const selectionMode = ref(false)
 const selectedFiles = ref(new Set())
 const bulkPublishing = ref(false)
 const bulkPublishOn = ref('')
+const bulkDownloadPermission = ref('')
+const bulkSettingPermission = ref(false)
 
 const toggleSelectionMode = () => {
 	selectionMode.value = !selectionMode.value
 	selectedFiles.value = new Set()
 	bulkPublishOn.value = ''
+	bulkDownloadPermission.value = ''
 }
 
 const isSelected = (item) => selectedFiles.value.has(item.name)
@@ -540,6 +590,20 @@ const toggleSelected = (item) => {
 	if (next.has(item.name)) next.delete(item.name)
 	else next.add(item.name)
 	selectedFiles.value = next
+}
+
+// Select All is scoped to whatever's currently in view (this folder, or
+// the current search results) - same as a file explorer's "select all in
+// this view", not every item recursively across all of Resources.
+const allSelected = computed(
+	() =>
+		items.value.length > 0 && selectedFiles.value.size === items.value.length
+)
+
+const toggleSelectAll = () => {
+	selectedFiles.value = allSelected.value
+		? new Set()
+		: new Set(items.value.map((item) => item.name))
 }
 
 const bulkPublishSelected = async () => {
@@ -565,6 +629,33 @@ const bulkPublishSelected = async () => {
 		toast.error(err.messages?.[0] || err.message || err)
 	} finally {
 		bulkPublishing.value = false
+	}
+}
+
+const bulkSetPermissionSelected = async () => {
+	if (!selectedFiles.value.size || !bulkDownloadPermission.value) return
+	bulkSettingPermission.value = true
+	try {
+		const result = await call(
+			'lms.lms.custom.resource_api.bulk_set_resource_download_permission',
+			{
+				file_names: Array.from(selectedFiles.value),
+				value: bulkDownloadPermission.value,
+			}
+		)
+		toast.success(
+			__('Download permission updated for {0} file(s)').format(
+				result.counts?.updated || 0
+			)
+		)
+		selectedFiles.value = new Set()
+		selectionMode.value = false
+		bulkDownloadPermission.value = ''
+		loadContents()
+	} catch (err) {
+		toast.error(err.messages?.[0] || err.message || err)
+	} finally {
+		bulkSettingPermission.value = false
 	}
 }
 
@@ -824,12 +915,17 @@ const setFolderPermission = async (item, value) => {
 }
 
 const setPublished = async (item, value) => {
+	// Optimistic: the Manage dialog's "Publish On" field only renders
+	// while item.published is true, so flipping it after the round-trip
+	// makes that field visibly wait on the network. Flip it immediately
+	// and only roll back if the save actually fails.
+	const previous = item.published
+	item.published = value ? 1 : 0
 	try {
 		await call('lms.lms.custom.resource_api.set_resource_published', {
 			file_name: item.name,
 			value: value ? 1 : 0,
 		})
-		item.published = value
 		toast.success(value ? __('Published') : __('Unpublished'))
 		// Publishing/unpublishing a folder cascades to every file and
 		// subfolder under it server-side, so a local mutation of just this
@@ -840,6 +936,7 @@ const setPublished = async (item, value) => {
 		// dialog already has the value it needs from the mutation above.)
 		loadContents()
 	} catch (err) {
+		item.published = previous
 		toast.error(err.messages?.[0] || err.message || err)
 	}
 }
