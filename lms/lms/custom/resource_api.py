@@ -409,21 +409,19 @@ def set_resource_publish_on(file_name, value):
 	_save_fields_with_retry(file_name, {"publish_on": value or None})
 
 
-@frappe.whitelist()
-def bulk_publish_resources(file_names, value, publish_on=None):
-	"""Manager: publish/unpublish multiple files and/or folders in one
-	action, optionally scheduling them all for the same future date.
+def _bulk_apply_field(file_names, fieldname, value, extra_fields=None, result_key="updated"):
+	"""Shared bulk-apply loop for bulk_publish_resources and
+	bulk_set_resource_download_permission - both cascade a single field
+	across a bulk selection with the same resolve/retry/cascade/error-
+	collection shape; only the field, its value, any extra sibling field
+	being set alongside it (e.g. publish_on), and the result list's name
+	differ between callers.
 
 	A folder in the selection behaves exactly like using its own Manage
-	dialog toggle would - its own published/publish_on are set, and
-	published (only) cascades to its full subtree, same as
-	set_resource_published/_cascade_field. So bulk-selecting a folder is
-	equivalent to toggling it individually, just batched together with
-	whatever else was selected in the same action.
-
-	Resolves each item independently and reports a summary, same pattern
-	as the trainer dashboard's bulk_unlock_chapter - one bad item doesn't
-	abort the whole batch.
+	dialog toggle would - its own value is set, and it cascades to its
+	full subtree via _cascade_field. Resolves each item independently and
+	reports a summary, same pattern as the trainer dashboard's
+	bulk_unlock_chapter - one bad item doesn't abort the whole batch.
 	"""
 	_check_resource_admin()
 
@@ -432,51 +430,43 @@ def bulk_publish_resources(file_names, value, publish_on=None):
 	if not file_names:
 		frappe.throw(_("No files selected."))
 
-	value = cint(value)
-	summary = {"published": [], "errors": []}
+	fields = {fieldname: value, **(extra_fields or {})}
+	summary = {result_key: [], "errors": []}
 	for file_name in file_names:
 		try:
 			doc = _get_scoped_resource(file_name)
-			_save_fields_with_retry(file_name, {"published": value, "publish_on": publish_on or None})
+			_save_fields_with_retry(file_name, fields)
 			if doc.is_folder:
-				_cascade_field(file_name, "published", value)
-			summary["published"].append(file_name)
+				_cascade_field(file_name, fieldname, value)
+			summary[result_key].append(file_name)
 		except Exception as exc:
-			frappe.log_error(title="bulk_publish_resources failed for one item")
+			frappe.log_error(title=f"bulk {fieldname} update failed for one item")
 			summary["errors"].append({"file_name": file_name, "reason": str(exc)})
 
 	summary["counts"] = {key: len(val) for key, val in summary.items() if isinstance(val, list)}
 	return summary
+
+
+@frappe.whitelist()
+def bulk_publish_resources(file_names, value, publish_on=None):
+	"""Manager: publish/unpublish multiple files and/or folders in one
+	action, optionally scheduling them all for the same future date.
+	"""
+	return _bulk_apply_field(
+		file_names,
+		"published",
+		cint(value),
+		extra_fields={"publish_on": publish_on or None},
+		result_key="published",
+	)
 
 
 @frappe.whitelist()
 def bulk_set_resource_download_permission(file_names, value):
 	"""Manager: set View Only/View & Download on multiple files and/or
-	folders in one action. Same shape as bulk_publish_resources - a
-	folder in the selection cascades to its full subtree via
-	_cascade_field, one bad item doesn't abort the whole batch.
+	folders in one action.
 	"""
-	_check_resource_admin()
-
-	if isinstance(file_names, str):
-		file_names = frappe.parse_json(file_names)
-	if not file_names:
-		frappe.throw(_("No files selected."))
-
-	summary = {"updated": [], "errors": []}
-	for file_name in file_names:
-		try:
-			doc = _get_scoped_resource(file_name)
-			_save_fields_with_retry(file_name, {"download_permission": value})
-			if doc.is_folder:
-				_cascade_field(file_name, "download_permission", value)
-			summary["updated"].append(file_name)
-		except Exception as exc:
-			frappe.log_error(title="bulk_set_resource_download_permission failed for one item")
-			summary["errors"].append({"file_name": file_name, "reason": str(exc)})
-
-	summary["counts"] = {key: len(val) for key, val in summary.items() if isinstance(val, list)}
-	return summary
+	return _bulk_apply_field(file_names, "download_permission", value, result_key="updated")
 
 
 @frappe.whitelist()

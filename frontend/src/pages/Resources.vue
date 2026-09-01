@@ -583,6 +583,13 @@ const toggleSelectionMode = () => {
 	bulkDownloadPermission.value = ''
 }
 
+const exitSelectionMode = () => {
+	selectionMode.value = false
+	selectedFiles.value = new Set()
+	bulkPublishOn.value = ''
+	bulkDownloadPermission.value = ''
+}
+
 const isSelected = (item) => selectedFiles.value.has(item.name)
 
 const toggleSelected = (item) => {
@@ -695,6 +702,7 @@ const runSearch = async () => {
 
 onMounted(loadContents)
 watch(currentFolder, () => {
+	exitSelectionMode()
 	// Navigating via the folder tree always means "browse," not "search" -
 	// otherwise landing on a new folder while an old query is still in
 	// the box would confusingly keep showing search results instead of
@@ -708,6 +716,7 @@ watch(currentFolder, () => {
 // decision.md - a search that only works if you're already in the
 // right folder isn't solving the actual problem).
 watch(searchQuery, () => {
+	exitSelectionMode()
 	clearTimeout(searchDebounceTimer)
 	searchDebounceTimer = setTimeout(() => {
 		if (isSearching.value) {
