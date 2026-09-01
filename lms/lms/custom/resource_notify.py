@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
-from frappe.utils import cint, today
+from frappe.utils import cint, flt, today
 
 from lms.lms.custom.resource_constants import (
 	RESOURCE_ROOT_FOLDER,
@@ -167,9 +167,7 @@ def get_lms_notification_recipients():
 	if not relevant_roles:
 		return []
 
-	return frappe.get_all(
-		"User", filters={"name": ["in", set(relevant_roles)], "enabled": 1}, pluck="name"
-	)
+	return frappe.get_all("User", filters={"name": ["in", set(relevant_roles)], "enabled": 1}, pluck="name")
 
 
 def _dispatch(action, folder_doc):
@@ -223,3 +221,89 @@ def _send_system_notification(action, folder_doc, recipients):
 		}
 	)
 	make_notification_logs(notification, recipients)
+
+
+def notify_manager_on_resource_quiz_completion(doc, method=None):
+	"""Notify an employee's direct manager when the employee completes a
+	quiz attached to a Resources file (LMS Quiz.resource is set).
+
+	Reuses the same admin toggles as the rest of Resources notifications
+	(notify_resource_updates_by_email/_in_app) instead of adding a new
+	setting - this is the same "someone should know about Resources
+	activity" concern, just a different trigger (quiz completion rather
+	than publish).
+
+	Registered on LMS Quiz Submission.after_insert - set_percentage() has
+	already run in validate() by then, so doc.percentage is available.
+	"""
+	resource = frappe.db.get_value("LMS Quiz", doc.quiz, "resource")
+	if not resource:
+		return  # not a Resources-linked quiz
+
+	employee = frappe.db.get_value(
+		"Employee",
+		{"user_id": doc.member, "status": "Active"},
+		["name", "employee_name", "reports_to"],
+		as_dict=True,
+	)
+	if not employee or not employee.reports_to:
+		return
+
+	manager_user = frappe.db.get_value("Employee", employee.reports_to, "user_id")
+	if not manager_user:
+		return
+
+	settings = frappe.db.get_singles_dict("LMS Settings")
+	send_email = cint(settings.get("notify_resource_updates_by_email"))
+	send_in_app = cint(settings.get("notify_resource_updates_in_app"))
+	if not send_email and not send_in_app:
+		return
+
+	quiz_title = frappe.db.get_value("LMS Quiz", doc.quiz, "title") or doc.quiz
+	# Employee's own docname (not the manager's), matching the ?employee=
+	# deep-link ManagerDashboard.vue resolves against `report.name`.
+	link = f"/lms/manager-dashboard?employee={employee.name}"
+
+	if send_email:
+		_send_quiz_completion_email(employee, quiz_title, doc, manager_user, link)
+	if send_in_app:
+		_send_quiz_completion_system_notification(employee, quiz_title, manager_user, link)
+
+
+def _send_quiz_completion_email(employee, quiz_title, submission, manager_user, link):
+	subject = _("{0} completed the quiz {1}").format(employee.employee_name, quiz_title)
+	args = {
+		"employee_name": employee.employee_name,
+		"quiz_title": quiz_title,
+		"score": submission.score,
+		"score_out_of": submission.score_out_of,
+		"percentage": flt(submission.percentage, 2),
+		"resource_url": f"{frappe.utils.get_url()}{link}",
+	}
+	frappe.enqueue(
+		method=frappe.sendmail,
+		queue="short",
+		timeout=300,
+		is_async=True,
+		recipients=[manager_user],
+		subject=subject,
+		template="resource_quiz_completed",
+		args=args,
+	)
+
+
+def _send_quiz_completion_system_notification(employee, quiz_title, manager_user, link):
+	notification = frappe._dict(
+		{
+			"subject": _("{0} completed the quiz {1}").format(employee.employee_name, quiz_title),
+			"email_content": _("{0} completed the quiz '{1}'. Check their progress!").format(
+				employee.employee_name, quiz_title
+			),
+			"document_type": "Employee",
+			"document_name": employee.name,
+			"from_user": frappe.session.user,
+			"type": "Alert",
+			"link": link,
+		}
+	)
+	make_notification_logs(notification, [manager_user])

@@ -466,14 +466,14 @@
    "options": "\nEmail\nIn-app"
   },
   {
-   "default": "0",
+   "default": "1",
    "description": "Applies when a document is uploaded or replaced under Resources.",
    "fieldname": "notify_resource_updates_by_email",
    "fieldtype": "Check",
    "label": "Notify Resource Updates by Email"
   },
   {
-   "default": "0",
+   "default": "1",
    "fieldname": "notify_resource_updates_in_app",
    "fieldtype": "Check",
    "label": "Notify Resource Updates In-app"

@@ -118,3 +118,4 @@ lms.patches.v2_0.open_to_opportunities
 lms.patches.v2_0.open_to_work
 lms.patches.v2_0.migrate_feedback_to_sessions #11-06-2026
 lms.patches.v2_0.backfill_employee_feedback_forms #27-06-2026
+lms.patches.v2_0.enable_resource_update_notifications #31-08-2026

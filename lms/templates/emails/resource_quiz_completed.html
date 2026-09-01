@@ -1,0 +1,19 @@
+<div style="width: 70%; margin: 0 auto;">
+    <p style="font-size: 16px; font-weight: 600;">
+        {{ _("Hello") }},
+    </p>
+    <p>
+        {{ _("{0} completed a quiz linked to a Resources file:").format(employee_name) }}
+    </p>
+    <div style="background-color: #F8F8F8; border-radius: 12px; padding: 12px; margin-bottom: 6px;">
+        <div style="font-weight: 600;">
+            {{ quiz_title }}
+        </div>
+        <div style="color: #8A8A8A; font-size: 13px; margin-top: 4px;">
+            {{ _("Score") }}: {{ score }}/{{ score_out_of }} ({{ percentage }}%)
+        </div>
+    </div>
+    <a href="{{ resource_url }}" style="display: inline-block; padding: 4px 8px; background-color: #171717; color: #fff; text-decoration: none; cursor: pointer; border-radius: 8px; margin-top: 10px;">
+        {{ _("View on Manager Dashboard") }}
+    </a>
+</div>

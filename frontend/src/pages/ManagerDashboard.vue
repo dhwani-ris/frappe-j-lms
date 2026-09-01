@@ -156,6 +156,7 @@
 						<template v-for="report in paginatedReports" :key="report.name">
 							<tr
 								class="border-b hover:bg-surface-gray-1 cursor-pointer transition-colors"
+								:data-report-row="report.name"
 								@click="toggleReport(report.name)"
 							>
 								<td class="px-4 py-3">
@@ -391,7 +392,8 @@ import { BarChart3, Download, ChevronRight, Search, X } from 'lucide-vue-next'
 import UserAvatar from '@/components/UserAvatar.vue'
 import QuizAnalyticsModal from '@/components/QuizAnalyticsModal.vue'
 import EmployeeFeedbackList from '@/components/EmployeeFeedbackList.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 
 const exporting = ref(false)
 const expandedReport = ref(null)
@@ -461,6 +463,8 @@ const getStatusTheme = (status) => {
 	return themes[status] || 'gray'
 }
 
+const route = useRoute()
+
 const dashboard = createResource({
 	url: 'lms.lms.custom.dashboard_api.get_manager_dashboard',
 	auto: true,
@@ -469,6 +473,29 @@ const dashboard = createResource({
 			total_reports: data?.reports?.length || 0,
 			team_size: data?.summary?.team_size || 0,
 			reports: data?.reports,
+		})
+
+		// Deep-link support (?employee=<Employee ID>) - e.g. from a
+		// "quiz completed" notification, so a manager lands directly on
+		// that employee's row instead of having to search the whole team.
+		const targetEmployee = route.query.employee
+		if (!targetEmployee) return
+		const index =
+			data?.reports?.findIndex((r) => r.name === targetEmployee) ?? -1
+		if (index === -1) return
+
+		// Clear filters (the target could be hidden by an active one) and
+		// jump to whichever page it actually falls on.
+		searchQuery.value = ''
+		departmentFilter.value = ''
+		progressFilter.value = ''
+		currentPage.value = Math.floor(index / perPage.value) + 1
+
+		expandedReport.value = targetEmployee
+		nextTick(() => {
+			document
+				.querySelector(`[data-report-row="${targetEmployee}"]`)
+				?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 		})
 	},
 })
